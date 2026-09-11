@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI 竞调采集器</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <div class="ambient ambient-one" aria-hidden="true"></div><div class="ambient ambient-two" aria-hidden="true"></div>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><span>AI 竞调采集器</span></div>
+    <nav class="steps" aria-label="采集流程">
+      <span class="step active" data-step="1"><b>1</b><em>定义任务</em></span><i aria-hidden="true"></i>
+      <span class="step" data-step="2"><b>2</b><em>网页采集</em></span><i aria-hidden="true"></i>
+      <span class="step" data-step="3"><b>3</b><em>同步沉淀</em></span>
+    </nav>
+    <a class="table-link" href="https://my.feishu.cn/wiki/P9ZXwmoFYiCTzpk6eQGcsj4Hnsg?table=tbluNJHoiHttVvse&view=vewfgRMcdy" target="_blank" rel="noreferrer">素材库</a>
+  </header>
+  <main id="main" class="shell">
+    <section class="intro"><p class="eyebrow">AI 短剧内容生产平台 · 竞品调研</p><h1>开始一次新的调研</h1><p>先定义本轮想确认的问题；不同竞品的路径由你在浏览器中自由走查。</p></section>
+    <section class="workbench panel" aria-labelledby="task-title">
+      <form id="task-form" novalidate>
+        <div class="form-head"><div><p class="eyebrow">步骤 1 / 3</p><h2 id="task-title">这次要研究什么？</h2></div><span class="required-note">* 必填</span></div>
+        <div class="fields">
+          <label>竞品名称 *<input name="competitor" required maxlength="60" autocomplete="off" placeholder="例如：小云雀" /></label>
+          <label>起始页面网址 *<input name="url" required type="url" inputmode="url" placeholder="https://…" /></label>
+          <label>调研目标 / 用户任务 *<textarea name="userTask" required maxlength="160" placeholder="例如：确认剧本设定的编辑方式与 AI 辅助能力"></textarea></label>
+          <details><summary>补充模块或路径（可选）</summary><label>模块 / 路径<input name="module" maxlength="80" placeholder="例如：剧本—故事设定" /></label></details>
+        </div>
+        <p id="form-error" class="form-error" role="alert"></p>
+        <button class="primary" type="submit"><span>开始采集</span><span aria-hidden="true">→</span></button>
+        <p class="hint">将以统一尺寸 1440 × 810 打开采集浏览器。</p>
+      </form>
+    </section>
+    <section id="status-card" class="status-card" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><div><strong>准备就绪</strong><p>创建任务后，浏览器会自动打开。</p></div></section>
+    <section class="recent" aria-labelledby="recent-title"><div class="recent-head"><h2 id="recent-title">最近任务</h2><span>仅保留最近的本地记录</span></div><div id="task-list" class="task-list" aria-live="polite"><p class="empty">还没有任务。</p></div></section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

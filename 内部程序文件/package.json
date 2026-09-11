@@ -1,0 +1,10 @@
+{
+  "name": "figma-qa-screenshot-tool",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Lightweight screenshot helper for design QA handoff.",
+  "type": "module",
+  "dependencies": {
+    "playwright-core": "^1.56.1"
+  }
+}

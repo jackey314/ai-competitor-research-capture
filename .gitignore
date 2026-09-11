@@ -1,0 +1,13 @@
+# Local research data and authenticated browser profile
+浏览器资料/
+截图文件/
+
+# Generated native application bundle and user-provided art assets
+AI竞调采集器.app/
+
+# Local operating-system and diagnostic files
+.DS_Store
+*.log
+
+# Never commit local Feishu routing/configuration
+**/飞书同步配置.json

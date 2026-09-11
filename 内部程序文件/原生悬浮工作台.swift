@@ -1,0 +1,386 @@
+import AppKit
+import Combine
+import Foundation
+import SwiftUI
+
+let toolDirectory = "/Users/afly/Documents/Codex/2026-06-04/figma-figma/outputs/figma-qa-screenshot-tool（截图工具）"
+let materialLibraryURL = "https://my.feishu.cn/wiki/P9ZXwmoFYiCTzpk6eQGcsj4Hnsg?table=tbluNJHoiHttVvse&view=vewfgRMcdy"
+
+struct TaskRequest: Codable { let competitor: String; let url: String; let userTask: String; let module: String }
+struct CaptureStatus: Codable {
+    let activeTask: ActiveTask?; let latestCapture: LatestCapture?
+    struct ActiveTask: Codable { let competitor: String; let running: Bool?; let status: String?; let launchError: String? }
+    struct LatestCapture: Codable { let session: String; let name: String; let syncStatus: String }
+}
+struct CapturePreview: Codable, Identifiable { let id: String; let name: String; let module: String; let syncStatus: String; let imageUrl: String }
+
+enum WorkbenchStage { case landing, details, capturing, review, complete }
+
+@MainActor
+final class WorkbenchModel: ObservableObject {
+    @Published var competitor = ""
+    @Published var pageURL = ""
+    @Published var userTask = ""
+    @Published var module = ""
+    @Published var stage: WorkbenchStage = .details
+    @Published var errorText = ""
+    @Published var starting = false
+    @Published var statusText = ""
+    @Published var captures: [CapturePreview] = []
+    @Published var isPinned = true
+    @Published var activeSession = ""
+    var closeWindow: (() -> Void)?
+    var minimizeWindow: (() -> Void)?
+    var zoomWindow: (() -> Void)?
+    var setPinned: ((Bool) -> Void)?
+
+    var step: Int { (stage == .review || stage == .complete) ? 3 : stage == .capturing ? 2 : 1 }
+
+    func continueToDetails() {
+        guard !competitor.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorText = "请先填写竞品名称。"; return }
+        errorText = ""
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { stage = .details }
+    }
+
+    func launchTask() {
+        errorText = ""
+        guard !competitor.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !pageURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorText = "请补充竞品名称和起始页面网址。"; return }
+        guard URL(string: pageURL)?.scheme != nil else { errorText = "请输入完整网址，例如 https://example.com。"; return }
+        starting = true
+        startLocalService()
+        Task { [weak self] in try? await Task.sleep(for: .seconds(1.3)); await self?.submitTask(retries: 2) }
+    }
+
+    private func startLocalService() {
+        let launcher = URL(fileURLWithPath: toolDirectory).appendingPathComponent("启动AI竞调采集器.command").path
+        let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/open"); process.arguments = ["-a", "Terminal", launcher]; try? process.run()
+    }
+
+    private func submitTask(retries: Int) async {
+        guard let endpoint = URL(string: "http://127.0.0.1:48923/api/tasks") else { return }
+        var request = URLRequest(url: endpoint); request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONEncoder().encode(TaskRequest(competitor: competitor, url: pageURL, userTask: userTask, module: module))
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode < 300 else {
+                let message = (try? JSONSerialization.jsonObject(with: data) as? [String: String])?["error"] ?? "无法启动采集。"
+                throw NSError(domain: "Workbench", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+            }
+            starting = false; activeSession = competitor; statusText = "浏览器已打开。在竞品网页右下角使用「截图入库」。"
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { stage = .capturing }
+        } catch {
+            if retries > 0 { try? await Task.sleep(for: .seconds(1)); await submitTask(retries: retries - 1) }
+            else { starting = false; errorText = "暂时无法启动采集服务，请再次点击打开采集浏览器。" }
+        }
+    }
+
+    func refreshStatus() {
+        let session = activeSession.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? activeSession
+        guard (stage == .capturing || stage == .review), let endpoint = URL(string: "http://127.0.0.1:48923/api/status"), let captureEndpoint = URL(string: "http://127.0.0.1:48923/api/captures?session=\(session)") else { return }
+        Task { [weak self] in
+            guard let self, let (statusData, _) = try? await URLSession.shared.data(from: endpoint), let status = try? JSONDecoder().decode(CaptureStatus.self, from: statusData) else { return }
+            if status.activeTask?.status == "打开失败", stage == .capturing {
+                errorText = status.activeTask?.launchError ?? "无法打开该页面，请检查网址后重试。"
+                stage = .details
+                return
+            }
+            if let (captureData, _) = try? await URLSession.shared.data(from: captureEndpoint), let nextCaptures = try? JSONDecoder().decode([CapturePreview].self, from: captureData) {
+                if nextCaptures.map(\.id) != captures.map(\.id) {
+                    captures = nextCaptures
+                }
+                if !nextCaptures.isEmpty {
+                    statusText = "已收录 \(captures.count) 张截图，可删除本地素材或继续采集。"
+                }
+            }
+        }
+    }
+
+    func goToStep(_ index: Int) {
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
+            if index == 1 { stage = .details }
+            else if index == 2 { stage = .capturing }
+            else if index == 3, !captures.isEmpty { stage = .review }
+            else if index == 3 { statusText = "暂未收录截图，请先在浏览器中完成截图。"; stage = .capturing }
+        }
+    }
+
+    func deleteCapture(_ capture: CapturePreview) {
+        let session = activeSession.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? activeSession
+        guard let endpoint = URL(string: "http://127.0.0.1:48923/api/captures?id=\(capture.id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? capture.id)&session=\(session)") else { return }
+        Task { [weak self] in
+            var request = URLRequest(url: endpoint); request.httpMethod = "DELETE"
+            guard let self, let (data, response) = try? await URLSession.shared.data(for: request), ((response as? HTTPURLResponse)?.statusCode ?? 500) < 300 else { return }
+            captures.removeAll { $0.id == capture.id }
+            if captures.isEmpty { statusText = "暂无已截图内容，继续在浏览器中采集。"; stage = .capturing }
+            _ = data
+        }
+    }
+
+    func togglePin() { isPinned.toggle(); setPinned?(isPinned) }
+
+    func openRecentTasks() { NSWorkspace.shared.open(URL(fileURLWithPath: toolDirectory).appendingPathComponent("截图文件/竞调任务")) }
+    func openMaterialLibrary() { if let url = URL(string: materialLibraryURL) { NSWorkspace.shared.open(url) } }
+    func reset() { competitor = ""; pageURL = ""; userTask = ""; module = ""; errorText = ""; statusText = ""; captures = []; activeSession = ""; withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { stage = .details } }
+}
+
+struct FloatingCard: View {
+    @ObservedObject var model: WorkbenchModel
+    private let timer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+    // Figma 的 36px 在当前 2x Retina 屏上对应 18pt，避免被渲染成约 72px。
+    private let interfaceCorner: CGFloat = 18
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            operationSurface
+            mirrorControls.padding(.leading, 26).padding(.top, 24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: interfaceCorner, style: .continuous))
+        .onReceive(timer) { _ in model.refreshStatus() }
+    }
+
+    private var operationSurface: some View {
+        ZStack {
+            Image(nsImage: backgroundImage()).resizable().scaledToFill().clipped()
+            Color(red: 0.01, green: 0.15, blue: 0.42).opacity(0.22)
+            VStack(spacing: 0) {
+                navigation
+                if model.stage == .landing { landing } else { journey }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: interfaceCorner, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: interfaceCorner, style: .continuous).stroke(.white.opacity(0.24), lineWidth: 1))
+    }
+
+    private var mirrorControls: some View {
+        HStack(spacing: 11) {
+            MirrorControl(color: Color(red: 1, green: 0.30, blue: 0.34), help: "收起窗口", action: { model.closeWindow?() })
+            MirrorControl(color: Color(red: 1, green: 0.76, blue: 0.08), help: "最小化窗口", action: { model.minimizeWindow?() })
+            MirrorControl(color: Color(red: 0.16, green: 0.78, blue: 0.38), help: "新建调研任务", action: model.reset)
+            Divider().frame(height: 16).overlay(.white.opacity(0.25))
+            Button(action: model.togglePin) { Image(systemName: model.isPinned ? "pin.fill" : "pin").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(model.isPinned ? 0.96 : 0.58)).frame(width: 23, height: 20).background(.black.opacity(0.16), in: Capsule()) }
+                .buttonStyle(.plain).help(model.isPinned ? "取消页面置顶" : "页面置顶")
+        }
+    }
+
+    private var navigation: some View {
+        HStack(spacing: 18) {
+            Spacer()
+            Button("最近任务", action: model.openRecentTasks).buttonStyle(TopLinkStyle())
+            Button("素材库", action: model.openMaterialLibrary).buttonStyle(TopLinkStyle())
+        }
+        .padding(.top, 18)
+        .padding(.trailing, 26)
+    }
+
+    private var landing: some View {
+        VStack(spacing: 0) {
+            Spacer().frame(height: 42)
+            heroTitle
+            Spacer().frame(height: 42)
+            glassPanel {
+                VStack(spacing: 0) {
+                    progressBar
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("竞品名称").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.92))
+                        TextField("例如：小云雀", text: $model.competitor).textFieldStyle(HeroInputStyle()).accessibilityLabel("竞品名称")
+                        if !model.errorText.isEmpty { Text(model.errorText).font(.system(size: 11)).foregroundStyle(Color(red: 1, green: 0.76, blue: 0.73)) }
+                    }.padding(.horizontal, 30).padding(.top, 45)
+                    Spacer()
+                    Button(action: model.continueToDetails) { Text("开始采集").frame(width: 184) }.buttonStyle(HeroButtonStyle()).padding(.bottom, 42)
+                }
+            }.frame(maxWidth: 430, minHeight: 430, maxHeight: 470)
+            Spacer(minLength: 22)
+        }
+    }
+
+    private var journey: some View {
+        VStack(spacing: 0) {
+            Spacer().frame(height: 26)
+            heroTitle
+            Spacer().frame(height: 30)
+            glassPanel {
+                VStack(spacing: 0) {
+                    progressBar
+                    if model.stage == .details { detailsForm }
+                    else if model.stage == .capturing { capturingState }
+                    else if model.stage == .review { reviewState }
+                    else { completedState }
+                }
+            }.frame(maxWidth: 430, minHeight: 455, maxHeight: 505)
+            Spacer(minLength: 18)
+        }
+    }
+
+    private var heroTitle: some View {
+        VStack(spacing: 10) {
+            Text("开启竞品调研").font(.system(size: 30, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            Text("先定义本轮想确认的问题；不同竞品的路径由你在浏览器中自由走查").font(.system(size: 13)).foregroundStyle(.white.opacity(0.86))
+        }.multilineTextAlignment(.center).padding(.horizontal, 24)
+    }
+
+    private func glassPanel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 36, style: .continuous)
+                .fill(LinearGradient(colors: [Color(red: 0.08, green: 0.30, blue: 0.58).opacity(0.84), Color(red: 0.03, green: 0.19, blue: 0.45).opacity(0.77)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay(RoundedRectangle(cornerRadius: 36, style: .continuous).stroke(.white.opacity(0.36), lineWidth: 1))
+                .shadow(color: .black.opacity(0.24), radius: 24, y: 14)
+            content().padding(15)
+        }
+    }
+
+    private var progressBar: some View {
+        HStack(spacing: 9) {
+            wideStep(1, "竞品目标", active: model.step == 1, done: model.step > 1)
+            progressLine
+            wideStep(2, "网页收录", active: model.step == 2, done: model.step > 2)
+            progressLine
+            wideStep(3, "截图沉淀", active: model.step == 3, done: false)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 15).background(.white.opacity(0.19), in: Capsule())
+    }
+
+    private var progressLine: some View { Rectangle().fill(.white.opacity(0.60)).frame(width: 20, height: 1).overlay { Rectangle().stroke(style: StrokeStyle(lineWidth: 1, dash: [2, 3])).foregroundStyle(.white.opacity(0.55)) } }
+    private func wideStep(_ index: Int, _ title: String, active: Bool, done: Bool) -> some View {
+        Button(action: { model.goToStep(index) }) { HStack(spacing: 5) { Text(done ? "✓" : String(format: "%02d", index)).font(.system(size: 12, weight: .bold, design: .rounded)); Text(title).font(.system(size: 12, weight: active ? .semibold : .regular)) }.foregroundStyle(active || done ? .white : .white.opacity(0.56)).fixedSize() }
+            .buttonStyle(.plain).contentShape(Rectangle()).help(index == 1 ? "查看调研信息" : index == 2 ? "查看网页收录说明" : "查看已截图素材")
+    }
+
+    private var detailsForm: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 15) {
+                HStack { VStack(alignment: .leading, spacing: 3) { Text("步骤 1 / 3").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.70)); Text("这次要研究什么？").font(.system(size: 20, weight: .semibold)).foregroundStyle(.white) }; Spacer(); Text("* 必填").font(.system(size: 11)).foregroundStyle(.white.opacity(0.58)) }
+                formField("竞品名称 *", text: $model.competitor, placeholder: "例如：小云雀")
+                formField("起始页面网址 *", text: $model.pageURL, placeholder: "https://…")
+                formTextField("调研目标 / 用户任务（可选）", text: $model.userTask, placeholder: "例如：确认剧本设定的编辑方式与 AI 辅助能力")
+                DisclosureGroup("补充模块或路径（可选）") { formField("模块 / 路径", text: $model.module, placeholder: "例如：剧本—故事设定") }.font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
+                if !model.errorText.isEmpty { Text(model.errorText).font(.system(size: 11)).foregroundStyle(Color(red: 1, green: 0.76, blue: 0.73)) }
+                Button(action: model.launchTask) { Text(model.starting ? "正在打开…" : "打开采集浏览器").frame(maxWidth: .infinity) }.buttonStyle(HeroButtonStyle()).disabled(model.starting).padding(.top, 3)
+            }.padding(.horizontal, 18).padding(.top, 22).padding(.bottom, 18)
+        }
+    }
+
+    private var capturingState: some View {
+        VStack(spacing: 16) { Spacer(); Image(systemName: "safari").font(.system(size: 34, weight: .light)).foregroundStyle(.white.opacity(0.92)); Text("正在网页收录").font(.system(size: 20, weight: .semibold)).foregroundStyle(.white); Text("在竞品页面点击右下角「截图入库」。截图一出现，这里会自动切换到步骤 03 的素材预览。").multilineTextAlignment(.center).font(.system(size: 12)).lineSpacing(4).foregroundStyle(.white.opacity(0.76)).padding(.horizontal, 34); Spacer(); Text(model.statusText).font(.system(size: 10)).foregroundStyle(.white.opacity(0.55)).padding(.bottom, 20) }.padding(.horizontal, 16)
+    }
+
+    private var reviewState: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { VStack(alignment: .leading, spacing: 2) { Text("正在截图沉淀").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white); Text("已收录 \(model.captures.count) 张 · 可继续在浏览器中采集").font(.system(size: 10)).foregroundStyle(.white.opacity(0.64)) }; Spacer(); Text("步骤 03").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.72)) }
+            ScrollView(showsIndicators: false) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 10) {
+                    ForEach(model.captures) { capture in CaptureTile(capture: capture, onDelete: { model.deleteCapture(capture) }) }
+                }
+            }
+            Text(model.statusText).font(.system(size: 10)).foregroundStyle(.white.opacity(0.60)).lineLimit(1)
+        }.padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 16)
+    }
+
+    private var completedState: some View {
+        VStack(spacing: 16) { Spacer(); Image(systemName: "checkmark.circle.fill").font(.system(size: 38)).foregroundStyle(Color(red: 0.70, green: 0.92, blue: 0.78)); Text("截图已沉淀").font(.system(size: 21, weight: .semibold)).foregroundStyle(.white); Text("关键截图与说明已进入飞书素材库。可以继续采集，或开启下一轮调研。").multilineTextAlignment(.center).font(.system(size: 12)).lineSpacing(4).foregroundStyle(.white.opacity(0.76)).padding(.horizontal, 32); Button("开启下一轮", action: model.reset).buttonStyle(HeroButtonStyle()); Spacer() }.padding(.horizontal, 16)
+    }
+
+    private func formField(_ label: String, text: Binding<String>, placeholder: String) -> some View { VStack(alignment: .leading, spacing: 6) { Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.88)); TextField(placeholder, text: text).textFieldStyle(HeroInputStyle()).accessibilityLabel(label) } }
+    private func formTextField(_ label: String, text: Binding<String>, placeholder: String) -> some View { VStack(alignment: .leading, spacing: 6) { Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.88)); TextField(placeholder, text: text, axis: .vertical).lineLimit(2...3).textFieldStyle(HeroInputStyle()).accessibilityLabel(label) } }
+    private func backgroundImage() -> NSImage { Bundle.main.image(forResource: "dandelion") ?? NSImage(size: NSSize(width: 1, height: 1)) }
+}
+
+struct HeroInputStyle: TextFieldStyle { func _body(configuration: TextField<Self._Label>) -> some View { configuration.textFieldStyle(.plain).font(.system(size: 14, weight: .medium)).foregroundStyle(.white).padding(.horizontal, 15).padding(.vertical, 13).background(Color(red: 0.11, green: 0.27, blue: 0.48).opacity(0.42)).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.30), lineWidth: 1)) } }
+struct HeroButtonStyle: ButtonStyle { func makeBody(configuration: Configuration) -> some View { HeroButtonBody(configuration: configuration) } }
+private struct HeroButtonBody: View {
+    let configuration: ButtonStyle.Configuration
+    @State private var hovering = false
+    var body: some View {
+        configuration.label.font(.system(size: 15, weight: .bold)).foregroundStyle(.white).padding(.vertical, 12).padding(.horizontal, 24)
+            .background(LinearGradient(colors: [Color(red: 0.49, green: 0.30, blue: 1), Color(red: 0.05, green: 0.32, blue: 1), Color(red: 0.52, green: 0.73, blue: 1)], startPoint: .leading, endPoint: .trailing))
+            .clipShape(Capsule()).shadow(color: Color(red: 0.22, green: 0.32, blue: 0.96).opacity(hovering ? 0.62 : 0.42), radius: hovering ? 20 : 14, y: hovering ? 8 : 6)
+            .scaleEffect(configuration.isPressed ? 0.98 : (hovering ? 1.025 : 1)).brightness(hovering ? 0.06 : 0).opacity(configuration.isPressed ? 0.84 : 1)
+            .onHover { hovering = $0 }.animation(.easeOut(duration: 0.16), value: hovering)
+    }
+}
+struct TopLinkStyle: ButtonStyle { func makeBody(configuration: Configuration) -> some View { TopLinkBody(configuration: configuration) } }
+private struct TopLinkBody: View {
+    let configuration: ButtonStyle.Configuration
+    @State private var hovering = false
+    var body: some View { configuration.label.font(.system(size: 12, weight: hovering ? .semibold : .regular)).foregroundStyle(.white.opacity(configuration.isPressed ? 0.5 : (hovering ? 1 : 0.9))).padding(.vertical, 5).overlay(alignment: .bottom) { Capsule().fill(.white.opacity(hovering ? 0.72 : 0)).frame(height: 1) }.onHover { hovering = $0 }.animation(.easeOut(duration: 0.15), value: hovering) }
+}
+private struct MirrorControl: View {
+    let color: Color; let help: String; let action: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: action) { Circle().fill(color).frame(width: 14, height: 14).overlay(Circle().stroke(.black.opacity(0.24), lineWidth: 1)) }
+            .buttonStyle(.plain).help(help).scaleEffect(hovering ? 1.14 : 1).brightness(hovering ? 0.08 : 0).onHover { hovering = $0 }.animation(.easeOut(duration: 0.14), value: hovering)
+    }
+}
+private struct CaptureTile: View {
+    let capture: CapturePreview
+    let onDelete: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: 5) {
+                AsyncImage(url: URL(string: "http://127.0.0.1:48923\(capture.imageUrl)")) { phase in
+                    if let image = phase.image { image.resizable().scaledToFill() }
+                    else { RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(0.14)).overlay(ProgressView().controlSize(.small)) }
+                }
+                .frame(height: 72).clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                HStack(spacing: 4) { Text(capture.id).font(.system(size: 9, weight: .bold)); Text(capture.name).lineLimit(1) }.font(.system(size: 9)).foregroundStyle(.white.opacity(0.84))
+                Text(capture.syncStatus).font(.system(size: 8)).foregroundStyle(capture.syncStatus == "已同步" ? Color(red: 0.68, green: 0.92, blue: 0.76) : .white.opacity(0.55))
+            }
+            Button(action: onDelete) { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(.white).frame(width: 19, height: 19).background(.black.opacity(0.56), in: Circle()) }
+                .buttonStyle(.plain).opacity(hovering ? 1 : 0.78)
+        }
+        .padding(5).background(.black.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onHover { hovering = $0 }
+    }
+}
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var panel: NSPanel!; private let model = WorkbenchModel(); private var statusItem: NSStatusItem!
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.button?.title = "竞调"; statusItem.button?.toolTip = "AI 竞调采集器（点此显示或隐藏窗口）"; statusItem.button?.target = self; statusItem.button?.action = #selector(togglePanel)
+        if let iconURL = Bundle.main.url(forResource: "tool-status", withExtension: "png"), let icon = NSImage(contentsOf: iconURL) { icon.size = NSSize(width: 16, height: 16); icon.isTemplate = false; statusItem.button?.image = icon; statusItem.button?.imagePosition = .imageLeading }
+        panel = InputPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 704), styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
+        panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true; panel.isOpaque = false; panel.backgroundColor = .clear; panel.appearance = NSAppearance(named: .darkAqua); panel.hasShadow = true; panel.level = .floating; panel.isFloatingPanel = true; panel.hidesOnDeactivate = false; panel.isMovableByWindowBackground = true; panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.becomesKeyOnlyIfNeeded = false
+        let container = NSView(frame: panel.contentView?.bounds ?? .zero)
+        container.autoresizingMask = [.width, .height]; container.wantsLayer = true; container.layer?.cornerRadius = 18; container.layer?.masksToBounds = true
+        let hosting = NSHostingView(rootView: FloatingCard(model: model))
+        hosting.frame = container.bounds; hosting.autoresizingMask = [.width, .height]; container.addSubview(hosting)
+        panel.contentView = container
+        model.closeWindow = { [weak self] in self?.panel.orderOut(nil) }
+        model.minimizeWindow = { [weak self] in self?.panel.miniaturize(nil) }
+        model.zoomWindow = { [weak self] in self?.panel.zoom(nil) }
+        model.setPinned = { [weak self] pinned in self?.panel.level = pinned ? .floating : .normal }
+        installEditMenu()
+        showPanel()
+    }
+    @objc private func togglePanel() { if panel.isVisible { panel.orderOut(nil) } else { showPanel() } }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showPanel(); return true }
+    private func showPanel() { positionPanel(); panel.orderFrontRegardless(); panel.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
+    private func positionPanel() { guard let screen = NSScreen.main else { return }; let frame = screen.visibleFrame; panel.setFrameOrigin(NSPoint(x: frame.maxX - panel.frame.width - 28, y: frame.maxY - panel.frame.height - 32)) }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    private func installEditMenu() {
+        let mainMenu = NSMenu()
+        let editItem = NSMenuItem(title: "编辑", action: nil, keyEquivalent: "")
+        let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(NSMenuItem(title: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(title: "复制", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(NSMenuItem(title: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        editItem.submenu = editMenu
+        mainMenu.addItem(editItem)
+        NSApp.mainMenu = mainMenu
+    }
+}
+
+final class InputPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+@main @MainActor struct FloatingWorkbenchApplication { static func main() { let application = NSApplication.shared; let delegate = AppDelegate(); application.delegate = delegate; application.setActivationPolicy(.accessory); application.run() } }
