@@ -184,6 +184,7 @@ server.listen(port, '127.0.0.1', () => {
 });
 
 server.on('error', (error) => {
-  if (error.code === 'EADDRINUSE') { openUrl(`http://127.0.0.1:${port}`); process.exit(0); }
+  // 已有服务时静默退出，不再额外打开本地工作台网页。
+  if (error.code === 'EADDRINUSE') { process.exit(0); }
   throw error;
 });

@@ -10,5 +10,5 @@ if [[ -z "$node_bin" || ! -x "$node_bin" ]]; then
 fi
 
 mkdir -p "./截图文件"
-nohup "$node_bin" "./内部程序文件/竞调工作台服务.mjs" --open >> "./截图文件/竞调工作台.log" 2>&1 &
+nohup "$node_bin" "./内部程序文件/竞调工作台服务.mjs" >> "./截图文件/竞调工作台.log" 2>&1 &
 exit 0
