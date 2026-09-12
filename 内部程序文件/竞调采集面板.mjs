@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { syncCaptureToFeishu } from './飞书竞调同步.mjs';
@@ -143,6 +144,11 @@ function panelScript(defaults = {}) {
       '<div class="preview" id="preview"><strong>预览与标注</strong><p class="hint">点击图片添加标注点；填写说明后点击保存，确认无误再同步飞书。</p><div class="stage" id="stage"><img id="image" alt="刚采集的页面截图预览" /><div id="pins"></div></div><div class="annotation-list" id="annotations"></div><div class="actions"><button class="secondary" id="open-library" type="button">打开素材库</button><button class="save" id="save" type="button">保存信息</button></div><button class="primary" id="sync" type="button">确认并同步到飞书</button></div>' +
       '</section>';
 
+    const toast = document.createElement('div');
+    toast.setAttribute('role', 'status'); toast.setAttribute('aria-live', 'polite');
+    Object.assign(toast.style, { display: 'none', position: 'absolute', right: '0', bottom: 'calc(100% + 14px)', width: '300px', padding: '11px 13px', borderRadius: '10px', color: '#fff', fontSize: '12px', lineHeight: '18px', boxShadow: '0 12px 30px rgba(16,24,40,.28)', background: '#027a48' });
+    root.appendChild(toast);
+
     const mount = () => {
       const target = document.documentElement || document.body;
       if (target && !host.isConnected) target.appendChild(host);
@@ -154,7 +160,7 @@ function panelScript(defaults = {}) {
     const session = $('session'); const task = $('task'); const name = $('name'); const module = $('module'); const note = $('note');
     const capture = $('capture'); const status = $('status'); const preview = $('preview'); const image = $('image');
     const stage = $('stage'); const pins = $('pins'); const annotations = $('annotations'); const save = $('save'); const sync = $('sync'); const openLibrary = $('open-library');
-    let current = null; let marks = [];
+    let current = null; let marks = []; let toastTimer;
     const taskDefaults = ${defaultsJson};
     const savedSession = (() => { try { return window.localStorage.getItem('__codexResearchSession'); } catch { return ''; } })();
     session.value = savedSession || taskDefaults.session || window.location.hostname || '未命名竞品';
@@ -163,6 +169,7 @@ function panelScript(defaults = {}) {
     session.addEventListener('input', () => { try { window.localStorage.setItem('__codexResearchSession', session.value); } catch {} });
 
     const setStatus = (message) => { status.textContent = message || ''; };
+    const showToast = (message, type = 'success') => { const colors = { success: '#027a48', warning: '#9a6700', error: '#b42318' }; toast.textContent = message; toast.style.background = colors[type] || colors.success; toast.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.style.display = 'none'; }, 5200); };
     const openPanel = () => { panel.dataset.open = 'true'; trigger.setAttribute('aria-expanded', 'true'); name.focus(); };
     const closePanel = () => { panel.dataset.open = 'false'; trigger.setAttribute('aria-expanded', 'false'); trigger.focus(); };
     const cleanName = (value) => String(value || '').trim().replace(/\s+/g, ' ');
@@ -192,9 +199,10 @@ function panelScript(defaults = {}) {
       capture.disabled = true; setStatus('正在采集并写入素材库…');
       try {
         const result = await window.__codexResearchCapture({ session: session.value, taskId: taskDefaults.taskId, userTask: task.value, name: cleanName(name.value) || document.title || '未命名页面', module: module.value, note: note.value });
+        if (result.duplicate) { setStatus(result.message); showToast(result.message, 'warning'); return; }
         current = result.capture; marks = Array.isArray(current.annotations) ? current.annotations : []; image.src = result.preview; preview.dataset.visible = 'true'; renderMarks();
-        setStatus('已入库 ' + current.id + ' · ' + current.filename + '。可继续修改名称或添加标注。');
-      } catch (error) { setStatus('截图失败：' + (error?.message || '未知错误')); }
+        setStatus('已入库 ' + current.id + ' · ' + current.filename + '。可继续修改名称或添加标注。'); showToast('截图 ' + current.id + ' 已成功入库。', 'success');
+      } catch (error) { const message = '截图失败：' + (error?.message || '未知错误'); setStatus(message); showToast(message, 'error'); }
       finally { capture.disabled = false; }
     });
     save.addEventListener('click', async () => {
@@ -202,8 +210,8 @@ function panelScript(defaults = {}) {
       save.disabled = true; setStatus('正在保存信息与标注…');
       try {
         const result = await window.__codexResearchUpdate({ session: current.session, captureId: current.id, userTask: task.value, name: cleanName(name.value) || current.name, module: module.value, note: note.value, annotations: marks });
-        current = result.capture; marks = current.annotations || []; renderMarks(); setStatus('已更新 ' + current.id + ' · ' + current.filename + '。');
-      } catch (error) { setStatus('保存失败：' + (error?.message || '未知错误')); }
+        current = result.capture; marks = current.annotations || []; renderMarks(); setStatus('已更新 ' + current.id + ' · ' + current.filename + '。'); showToast('截图信息已保存。', 'success');
+      } catch (error) { const message = '保存失败：' + (error?.message || '未知错误'); setStatus(message); showToast(message, 'error'); }
       finally { save.disabled = false; }
     });
     sync.addEventListener('click', async () => {
@@ -211,8 +219,8 @@ function panelScript(defaults = {}) {
       sync.disabled = true; setStatus('正在上传截图并同步到飞书多维表格…');
       try {
         const result = await window.__codexResearchSync({ session: current.session, captureId: current.id });
-        current = result.capture; setStatus('已同步到飞书。记录编号：' + (result.recordId || current.id) + '。');
-      } catch (error) { setStatus('飞书同步失败：' + (error?.message || '未知错误') + '。本地素材仍已保存。'); }
+        current = result.capture; const message = result.alreadySynced ? '该截图已在飞书中，无需重复同步。' : '已同步到飞书。记录编号：' + (result.recordId || current.id) + '。'; setStatus(message); showToast(message, result.alreadySynced ? 'warning' : 'success');
+      } catch (error) { const message = '飞书同步失败：' + (error?.message || '未知错误') + '。本地素材仍已保存。'; setStatus(message); showToast(message, 'error'); }
       finally { sync.disabled = false; }
     });
     openLibrary.addEventListener('click', async () => {
@@ -257,14 +265,11 @@ export async function attachResearchCapturePanel(context, { researchDir, default
   await context.exposeBinding('__codexResearchCapture', async (source, payload = {}) => {
     const library = await getLibrary(payload.session);
     const page = source.page;
-    const id = String(library.index.captures.length + 1).padStart(3, '0');
     const name = shortText(payload.name, 100) || await page.title() || '未命名页面';
     const module = shortText(payload.module, 80);
     const note = shortText(payload.note, 300);
     const viewport = page.viewportSize() || { width: 0, height: 0 };
     const viewportLabel = viewport.width && viewport.height ? `${viewport.width}x${viewport.height}` : 'viewport';
-    const filename = `${id}-${safeName(name)}-${viewportLabel}.png`;
-    const metadataFilename = `${id}-${safeName(name)}.json`;
     await page.evaluate(() => { const host = document.querySelector('#codex-research-capture-host'); if (host) host.dataset.captureHidden = 'true'; });
     let image;
     try {
@@ -272,6 +277,18 @@ export async function attachResearchCapturePanel(context, { researchDir, default
     } finally {
       await page.evaluate(() => { const host = document.querySelector('#codex-research-capture-host'); if (host) host.dataset.captureHidden = 'false'; }).catch(() => {});
     }
+    const imageHash = createHash('sha256').update(image).digest('hex');
+    const finalUrl = page.url();
+    const duplicate = library.index.captures.find((item) =>
+      item.imageHash === imageHash || (item.finalUrl === finalUrl && item.name === name && item.module === module)
+    );
+    if (duplicate) {
+      const reason = duplicate.imageHash === imageHash ? '页面画面完全相同' : '页面、名称和模块信息相同';
+      return { duplicate: true, message: `发现重复素材 ${duplicate.id}（${reason}），未重复入库。可修改页面名称或模块后再截图。` };
+    }
+    const id = String(library.index.captures.length + 1).padStart(3, '0');
+    const filename = `${id}-${safeName(name)}-${viewportLabel}.png`;
+    const metadataFilename = `${id}-${safeName(name)}.json`;
     await fs.writeFile(path.join(library.imagesDir, filename), image);
     const capture = {
       id,
@@ -288,7 +305,8 @@ export async function attachResearchCapturePanel(context, { researchDir, default
       syncStatus: '待分析',
       annotations: [],
       capturedAt: new Date().toISOString(),
-      finalUrl: page.url(),
+      finalUrl,
+      imageHash,
       title: await page.title(),
       viewport: { width: viewport.width, height: viewport.height, label: viewportLabel },
       screenshot: `images/${filename}`,
