@@ -292,7 +292,7 @@ struct FloatingCard: View {
     }
 
     private var capturingState: some View {
-        VStack(spacing: 16) { Spacer(); Image(systemName: "safari").font(.system(size: 34, weight: .light)).foregroundStyle(.white.opacity(0.92)); Text("正在网页收录").font(.system(size: 20, weight: .semibold)).foregroundStyle(.white); Text("在竞品页面点击右下角「截图入库」。截图一出现，这里会自动切换到步骤 03 的素材预览。").multilineTextAlignment(.center).font(.system(size: 12)).lineSpacing(4).foregroundStyle(.white.opacity(0.76)).padding(.horizontal, 34); Spacer(); Text(model.statusText).font(.system(size: 10)).foregroundStyle(.white.opacity(0.55)).padding(.bottom, 20) }.padding(.horizontal, 16)
+        VStack(spacing: 16) { Spacer(); Image(systemName: "safari").font(.system(size: 34, weight: .light)).foregroundStyle(.white.opacity(0.92)); Text("正在网页收录").font(.system(size: 20, weight: .semibold)).foregroundStyle(.white); Text("在竞品页面点击右下角「截图入库」。截图成功后仍停留在这里；需要查看、删除或结束记录时，点击步骤 03「截图沉淀」。").multilineTextAlignment(.center).font(.system(size: 12)).lineSpacing(4).foregroundStyle(.white.opacity(0.76)).padding(.horizontal, 34); Spacer(); Text(model.statusText).font(.system(size: 10)).foregroundStyle(.white.opacity(0.55)).padding(.bottom, 20) }.padding(.horizontal, 16)
     }
 
     private var reviewState: some View {

@@ -33,6 +33,22 @@ function normalizeAnnotations(value) {
   }));
 }
 
+function normalizeStyleSnapshot(value) {
+  if (!value || typeof value !== 'object') return null;
+  const cleanMap = (source, keys) => Object.fromEntries(keys.map((key) => [key, shortText(source?.[key], 120)]).filter(([, item]) => item));
+  const snapshot = {
+    selector: shortText(value.selector, 240),
+    tagName: shortText(value.tagName, 40),
+    text: shortText(value.text, 180),
+    capturedAt: shortText(value.capturedAt, 48),
+    rect: cleanMap(value.rect, ['width', 'height', 'x', 'y']),
+    typography: cleanMap(value.typography, ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'color', 'textAlign']),
+    spacing: cleanMap(value.spacing, ['padding', 'margin', 'gap']),
+    surface: cleanMap(value.surface, ['display', 'backgroundColor', 'border', 'borderRadius', 'boxShadow']),
+  };
+  return snapshot.selector || snapshot.tagName ? snapshot : null;
+}
+
 async function readJson(filePath, fallback) {
   try {
     return JSON.parse(await fs.readFile(filePath, 'utf8'));
@@ -110,6 +126,37 @@ async function writeLibraryFiles(library) {
   await fs.writeFile(path.join(library.directory, '飞书待同步.md'), feishuMarkdown, 'utf8');
 }
 
+async function writeFigmaSpecFile(library, capture) {
+  const specDir = path.join(library.directory, 'Figma标注');
+  await fs.mkdir(specDir, { recursive: true });
+  const spec = normalizeStyleSnapshot(capture.styleSnapshot);
+  const rows = (group) => Object.entries(group || {}).filter(([, value]) => value).map(([key, value]) => `- ${key}: ${value}`);
+  const markdown = [
+    `# ${capture.id}｜${capture.name}｜Figma 标注`,
+    '',
+    `- 截图：\`${capture.screenshot}\``,
+    `- 页面：${capture.finalUrl}`,
+    `- 模块：${capture.module || '—'}`,
+    `- 用户任务：${capture.userTask || '—'}`,
+    '',
+    '## 调研内容',
+    `- 观察事实：${capture.observation || '待补充'}`,
+    `- 分析解读：${capture.analysis || '待补充'}`,
+    `- 待验证：${capture.toVerify || '待补充'}`,
+    '',
+    '## 点选元素的视觉规格',
+    spec ? `- 选择器：\`${spec.selector}\`` : '- 尚未读取元素样式。请在网页右下角的“读取 UI 数值”中点选元素。',
+    ...(spec?.tagName ? [`- 元素：${spec.tagName}${spec.text ? ` · ${spec.text}` : ''}`] : []),
+    ...(spec ? ['', '### 尺寸与位置', ...rows(spec.rect), '', '### 文字', ...rows(spec.typography), '', '### 间距', ...rows(spec.spacing), '', '### 容器与表面', ...rows(spec.surface)] : []),
+    '',
+    '> 将截图拖入 Figma 后，可把这份标注中的数值作为图层命名、说明或设计变量的依据。',
+    '',
+  ].join('\n');
+  const specName = `${capture.id}-${safeName(capture.name)}-Figma标注.md`;
+  await fs.writeFile(path.join(specDir, specName), markdown, 'utf8');
+  capture.figmaSpec = `Figma标注/${specName}`;
+}
+
 function panelScript(defaults = {}) {
   const defaultsJson = JSON.stringify({
     session: defaults.session || '',
@@ -129,7 +176,7 @@ function panelScript(defaults = {}) {
       '<style>' +
       ':host{all:initial;position:fixed;right:20px;bottom:20px;z-index:2147483647;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033}' +
       ':host([data-capture-hidden="true"]){display:none!important}' +
-      'button,input,textarea{font:inherit;box-sizing:border-box}.trigger{width:52px;height:52px;border:0;border-radius:26px;background:#171717;color:#fff;box-shadow:0 10px 28px rgba(0,0,0,.25);font-size:22px;cursor:pointer}.trigger:focus-visible,.panel button:focus-visible,.panel input:focus-visible,.panel textarea:focus-visible{outline:3px solid #8b5cf6;outline-offset:2px}.panel{position:absolute;right:0;bottom:64px;width:370px;max-height:calc(100vh - 100px);overflow:auto;border:1px solid #d9dce5;border-radius:16px;background:#fff;box-shadow:0 16px 48px rgba(16,24,40,.22);padding:16px;display:none}.panel[data-open="true"]{display:block}.head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between}.head h2{font-size:16px;line-height:22px;margin:0}.head p{font-size:12px;color:#667085;margin:3px 0 0}.close{border:0;background:transparent;font-size:22px;line-height:24px;color:#667085;cursor:pointer}.field{display:grid;gap:5px;margin-top:12px}.field label{font-size:12px;font-weight:650;color:#344054}.field input,.field textarea{border:1px solid #cfd4df;border-radius:8px;padding:8px 10px;color:#172033;background:#fff}.field textarea{min-height:60px;resize:vertical}.primary{width:100%;border:0;border-radius:9px;padding:10px 12px;margin-top:14px;background:#171717;color:#fff;font-weight:700;cursor:pointer}.secondary{border:1px solid #cfd4df;border-radius:8px;background:#fff;padding:7px 9px;color:#344054;cursor:pointer}.hint,.status{font-size:12px;line-height:18px;color:#667085;margin:10px 0 0}.status[aria-live]{min-height:18px}.preview{display:none;margin-top:14px;border-top:1px solid #eaecf0;padding-top:14px}.preview[data-visible="true"]{display:block}.stage{position:relative;margin-top:8px;border:1px solid #d9dce5;border-radius:10px;overflow:hidden;background:#f2f4f7;cursor:crosshair}.stage img{display:block;width:100%;height:auto}.pin{position:absolute;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:#7c3aed;color:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center;transform:translate(-50%,-50%);box-shadow:0 2px 7px rgba(0,0,0,.28);pointer-events:none}.annotation-list{display:grid;gap:8px;margin-top:10px}.annotation{display:grid;grid-template-columns:32px 1fr 28px;gap:6px;align-items:center}.annotation span{font-size:12px;font-weight:700;color:#7c3aed}.annotation input{min-width:0;padding:6px 8px;font-size:12px}.annotation button{border:0;background:transparent;color:#b42318;font-size:18px;cursor:pointer}.actions{display:flex;gap:8px;margin-top:12px}.actions button{flex:1}.actions .save{border:0;border-radius:8px;background:#7c3aed;color:#fff;padding:8px;font-weight:700;cursor:pointer}' +
+      'button,input,textarea{font:inherit;box-sizing:border-box}.trigger{width:52px;height:52px;border:0;border-radius:26px;background:#171717;color:#fff;box-shadow:0 10px 28px rgba(0,0,0,.25);font-size:22px;cursor:pointer}.trigger:focus-visible,.panel button:focus-visible,.panel input:focus-visible,.panel textarea:focus-visible{outline:3px solid #8b5cf6;outline-offset:2px}.panel{position:absolute;right:0;bottom:64px;width:370px;max-height:calc(100vh - 100px);overflow:auto;border:1px solid #d9dce5;border-radius:16px;background:#fff;box-shadow:0 16px 48px rgba(16,24,40,.22);padding:16px;display:none}.panel[data-open="true"]{display:block}.head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between}.head h2{font-size:16px;line-height:22px;margin:0}.head p{font-size:12px;color:#667085;margin:3px 0 0}.close{border:0;background:transparent;font-size:22px;line-height:24px;color:#667085;cursor:pointer}.field{display:grid;gap:5px;margin-top:12px}.field label{font-size:12px;font-weight:650;color:#344054}.field input,.field textarea{border:1px solid #cfd4df;border-radius:8px;padding:8px 10px;color:#172033;background:#fff}.field textarea{min-height:60px;resize:vertical}.primary{width:100%;border:0;border-radius:9px;padding:10px 12px;margin-top:14px;background:#171717;color:#fff;font-weight:700;cursor:pointer}.secondary{border:1px solid #cfd4df;border-radius:8px;background:#fff;padding:7px 9px;color:#344054;cursor:pointer}.hint,.status{font-size:12px;line-height:18px;color:#667085;margin:10px 0 0}.status[aria-live]{min-height:18px}.preview{display:none;margin-top:14px;border-top:1px solid #eaecf0;padding-top:14px}.preview[data-visible="true"]{display:block}.stage{position:relative;margin-top:8px;border:1px solid #d9dce5;border-radius:10px;overflow:hidden;background:#f2f4f7;cursor:crosshair}.stage img{display:block;width:100%;height:auto}.pin{position:absolute;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:#7c3aed;color:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center;transform:translate(-50%,-50%);box-shadow:0 2px 7px rgba(0,0,0,.28);pointer-events:none}.annotation-list{display:grid;gap:8px;margin-top:10px}.annotation{display:grid;grid-template-columns:32px 1fr 28px;gap:6px;align-items:center}.annotation span{font-size:12px;font-weight:700;color:#7c3aed}.annotation input{min-width:0;padding:6px 8px;font-size:12px}.annotation button{border:0;background:transparent;color:#b42318;font-size:18px;cursor:pointer}.actions{display:flex;gap:8px;margin-top:12px}.actions button{flex:1}.actions .save{border:0;border-radius:8px;background:#7c3aed;color:#fff;padding:8px;font-weight:700;cursor:pointer}.inspector{display:none;position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #7c3aed;background:rgba(124,58,237,.10);box-sizing:border-box}.inspector[data-visible="true"]{display:block}.spec{margin-top:10px;padding:9px;border:1px solid #e4e7ec;border-radius:8px;background:#f8fafc;font-size:11px;line-height:17px;color:#344054;white-space:pre-wrap}' +
       '@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition:none!important;animation:none!important}}' +
       '</style>' +
       '<button class="trigger" id="trigger" type="button" aria-label="打开竞调截图入库面板" title="竞调截图入库">⌑</button>' +
@@ -139,9 +186,9 @@ function panelScript(defaults = {}) {
       '<div class="field"><label for="task">用户任务</label><input id="task" maxlength="160" placeholder="例如：确认剧本设定的编辑方式" /></div>' +
       '<div class="field"><label for="name">页面名称</label><input id="name" maxlength="100" /></div>' +
       '<div class="field"><label for="module">模块</label><input id="module" maxlength="80" placeholder="例如：分镜编辑" /></div>' +
-      '<div class="field"><label for="note">页面备注</label><textarea id="note" maxlength="300" placeholder="记录路径、观察或待验证问题"></textarea></div>' +
+      '<div class="field"><label for="note">页面备注 / 路径</label><textarea id="note" maxlength="300" placeholder="记录当前路径、功能名称或上下文"></textarea></div>' +
       '<button class="primary" id="capture" type="button">截图并预览</button><p class="hint">截图时采集面板会自动隐藏，不会出现在图片中。</p><p class="status" id="status" aria-live="polite"></p>' +
-      '<div class="preview" id="preview"><strong>预览与标注</strong><p class="hint">点击图片添加标注点；填写说明后点击保存，确认无误再同步飞书。</p><div class="stage" id="stage"><img id="image" alt="刚采集的页面截图预览" /><div id="pins"></div></div><div class="annotation-list" id="annotations"></div><div class="actions"><button class="secondary" id="open-library" type="button">打开素材库</button><button class="save" id="save" type="button">保存信息</button></div><button class="primary" id="sync" type="button">确认并同步到飞书</button></div>' +
+      '<div class="preview" id="preview"><strong>预览、分析与标注</strong><p class="hint">点击图片添加标注点。事实、解读和待验证会同步进飞书；解读草稿只作辅助，提交前请自行校对。</p><div class="stage" id="stage"><img id="image" alt="刚采集的页面截图预览" /><div id="pins"></div></div><div class="annotation-list" id="annotations"></div><div class="field"><label for="observation">观察事实</label><textarea id="observation" maxlength="500" placeholder="只描述画面中可直接确认的事实"></textarea></div><div class="field"><label for="analysis">分析解读</label><textarea id="analysis" maxlength="500" placeholder="基于事实的产品判断；避免把猜测写成事实"></textarea></div><div class="field"><label for="verify">待验证</label><textarea id="verify" maxlength="300" placeholder="下一步需进入何处、验证什么"></textarea></div><div class="actions"><button class="secondary" id="draft" type="button">生成分析草稿</button><button class="secondary" id="inspect" type="button">读取 UI 数值</button></div><p class="hint" id="inspect-hint">点击“读取 UI 数值”后，再点网页中的任一元素；不会触发该网页操作。</p><div class="spec" id="spec" hidden></div><div class="actions"><button class="secondary" id="open-library" type="button">打开素材库</button><button class="save" id="save" type="button">保存信息</button></div><button class="primary" id="sync" type="button">确认并同步到飞书</button></div>' +
       '</section>';
 
     const toast = document.createElement('div');
@@ -160,7 +207,9 @@ function panelScript(defaults = {}) {
     const session = $('session'); const task = $('task'); const name = $('name'); const module = $('module'); const note = $('note');
     const capture = $('capture'); const status = $('status'); const preview = $('preview'); const image = $('image');
     const stage = $('stage'); const pins = $('pins'); const annotations = $('annotations'); const save = $('save'); const sync = $('sync'); const openLibrary = $('open-library');
-    let current = null; let marks = []; let toastTimer;
+    const observation = $('observation'); const analysis = $('analysis'); const verify = $('verify'); const draft = $('draft'); const inspect = $('inspect'); const inspectHint = $('inspect-hint'); const spec = $('spec');
+    const highlight = document.createElement('div'); highlight.className = 'inspector'; root.appendChild(highlight);
+    let current = null; let marks = []; let toastTimer; let inspectMode = false; let selectedStyle = null;
     const taskDefaults = ${defaultsJson};
     const savedSession = (() => { try { return window.localStorage.getItem('__codexResearchSession'); } catch { return ''; } })();
     session.value = savedSession || taskDefaults.session || window.location.hostname || '未命名竞品';
@@ -173,6 +222,36 @@ function panelScript(defaults = {}) {
     const openPanel = () => { panel.dataset.open = 'true'; trigger.setAttribute('aria-expanded', 'true'); name.focus(); };
     const closePanel = () => { panel.dataset.open = 'false'; trigger.setAttribute('aria-expanded', 'false'); trigger.focus(); };
     const cleanName = (value) => String(value || '').trim().replace(/\s+/g, ' ');
+    const isPanelTarget = (target) => target === host || target?.getRootNode?.() === root || target?.closest?.('#codex-research-capture-host');
+    const number = (value) => Math.round(Number(value) * 10) / 10;
+    const selectorFor = (element) => {
+      if (element.id) return '#' + CSS.escape(element.id);
+      const parts = [];
+      let node = element;
+      while (node && node.nodeType === 1 && parts.length < 4) {
+        let part = node.tagName.toLowerCase();
+        const stableClass = Array.from(node.classList || []).find((item) => /^[a-z][a-z0-9_-]{1,30}$/i.test(item) && !/^(active|selected|hover|focus)$/i.test(item));
+        if (stableClass) part += '.' + CSS.escape(stableClass);
+        else if (node.parentElement) { const siblings = Array.from(node.parentElement.children).filter((item) => item.tagName === node.tagName); if (siblings.length > 1) part += ':nth-of-type(' + (siblings.indexOf(node) + 1) + ')'; }
+        parts.unshift(part); if (node.id) break; node = node.parentElement;
+      }
+      return parts.join(' > ');
+    };
+    const snapshotElement = (element) => {
+      const styles = getComputedStyle(element); const rect = element.getBoundingClientRect();
+      return { selector: selectorFor(element), tagName: element.tagName.toLowerCase(), text: cleanName(element.innerText || element.getAttribute('aria-label') || element.alt || '').slice(0, 180), capturedAt: new Date().toISOString(), rect: { width: number(rect.width) + 'px', height: number(rect.height) + 'px', x: number(rect.x) + 'px', y: number(rect.y) + 'px' }, typography: { fontFamily: styles.fontFamily, fontSize: styles.fontSize, fontWeight: styles.fontWeight, lineHeight: styles.lineHeight, letterSpacing: styles.letterSpacing, color: styles.color, textAlign: styles.textAlign }, spacing: { padding: styles.padding, margin: styles.margin, gap: styles.gap }, surface: { display: styles.display, backgroundColor: styles.backgroundColor, border: styles.border, borderRadius: styles.borderRadius, boxShadow: styles.boxShadow } };
+    };
+    const renderSpec = () => {
+      if (!selectedStyle) { spec.hidden = true; spec.textContent = ''; return; }
+      const { typography, spacing, surface, rect } = selectedStyle;
+      spec.textContent = '已读取：' + selectedStyle.tagName + '  ' + selectedStyle.selector + '\n尺寸 ' + rect.width + ' × ' + rect.height + ' · 字号 ' + typography.fontSize + ' · 行高 ' + typography.lineHeight + '\n内边距 ' + spacing.padding + ' · 圆角 ' + surface.borderRadius + ' · 间距 ' + spacing.gap;
+      spec.hidden = false;
+    };
+    const clearInspect = () => { inspectMode = false; highlight.dataset.visible = 'false'; inspect.textContent = '读取 UI 数值'; inspectHint.textContent = '点击“读取 UI 数值”后，再点网页中的任一元素；不会触发该网页操作。'; };
+    const onInspectMove = (event) => { if (!inspectMode || isPanelTarget(event.target)) return; const rect = event.target.getBoundingClientRect(); Object.assign(highlight.style, { left: rect.left + 'px', top: rect.top + 'px', width: rect.width + 'px', height: rect.height + 'px' }); highlight.dataset.visible = 'true'; };
+    const onInspectPick = (event) => { if (!inspectMode || isPanelTarget(event.target)) return; event.preventDefault(); event.stopPropagation(); selectedStyle = snapshotElement(event.target); renderSpec(); clearInspect(); setStatus('已读取 UI 数值。保存信息后会生成可用于 Figma 标注的文件。'); showToast('已读取 ' + selectedStyle.tagName + ' 的字号、间距和样式。', 'success'); };
+    document.addEventListener('pointermove', onInspectMove, true);
+    document.addEventListener('click', onInspectPick, true);
     const renderMarks = () => {
       pins.innerHTML = ''; annotations.innerHTML = '';
       marks.forEach((mark, index) => {
@@ -194,13 +273,25 @@ function panelScript(defaults = {}) {
       marks.push({ id: 'A' + (marks.length + 1), x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)), y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)), note: '' });
       renderMarks();
     });
+    draft.addEventListener('click', () => {
+      const page = cleanName(name.value) || document.title || '当前页面'; const goal = cleanName(task.value) || '本轮调研任务';
+      if (!observation.value.trim()) observation.value = '在 ' + page + ' 页面中，已于当前浏览器视口完成截图留存。页面备注：' + (cleanName(note.value) || '待补充') + '。';
+      if (!analysis.value.trim()) analysis.value = '该截图为“' + goal + '”提供了界面证据。请结合后续页面流程与同类竞品对照，确认该能力是否可编辑、可保存并在后续环节生效。';
+      if (!verify.value.trim()) verify.value = '继续进入与“' + page + '”关联的下一层页面，验证关键操作是否可完成、结果是否可回溯。';
+      setStatus('已生成可编辑分析草稿，请校对后保存。'); showToast('分析草稿已生成，尚未同步。', 'success');
+    });
+    inspect.addEventListener('click', () => {
+      if (!current) { setStatus('请先完成截图，再读取用于 Figma 标注的 UI 数值。'); return; }
+      if (inspectMode) { clearInspect(); return; }
+      inspectMode = true; inspect.textContent = '取消读取'; inspectHint.textContent = '现在点选网页元素即可读取。该次点击不会触发网页的跳转、按钮或输入。'; setStatus('正在选择 UI 元素…');
+    });
     capture.addEventListener('click', async () => {
       if (!window.__codexResearchCapture) { setStatus('当前浏览器会话未连接截图工具，请重新打开通用截图工具。'); return; }
       capture.disabled = true; setStatus('正在采集并写入素材库…');
       try {
         const result = await window.__codexResearchCapture({ session: session.value, taskId: taskDefaults.taskId, userTask: task.value, name: cleanName(name.value) || document.title || '未命名页面', module: module.value, note: note.value });
         if (result.duplicate) { setStatus(result.message); showToast(result.message, 'warning'); return; }
-        current = result.capture; marks = Array.isArray(current.annotations) ? current.annotations : []; image.src = result.preview; preview.dataset.visible = 'true'; renderMarks();
+        current = result.capture; marks = Array.isArray(current.annotations) ? current.annotations : []; selectedStyle = current.styleSnapshot || null; observation.value = current.observation || ''; analysis.value = current.analysis || ''; verify.value = current.toVerify || ''; image.src = result.preview; preview.dataset.visible = 'true'; renderMarks(); renderSpec(); clearInspect();
         setStatus('已入库 ' + current.id + ' · ' + current.filename + '。可继续修改名称或添加标注。'); showToast('截图 ' + current.id + ' 已成功入库。', 'success');
       } catch (error) { const message = '截图失败：' + (error?.message || '未知错误'); setStatus(message); showToast(message, 'error'); }
       finally { capture.disabled = false; }
@@ -209,7 +300,7 @@ function panelScript(defaults = {}) {
       if (!current || !window.__codexResearchUpdate) return;
       save.disabled = true; setStatus('正在保存信息与标注…');
       try {
-        const result = await window.__codexResearchUpdate({ session: current.session, captureId: current.id, userTask: task.value, name: cleanName(name.value) || current.name, module: module.value, note: note.value, annotations: marks });
+        const result = await window.__codexResearchUpdate({ session: current.session, captureId: current.id, userTask: task.value, name: cleanName(name.value) || current.name, module: module.value, note: note.value, observation: observation.value, analysis: analysis.value, toVerify: verify.value, annotations: marks, styleSnapshot: selectedStyle });
         current = result.capture; marks = current.annotations || []; renderMarks(); setStatus('已更新 ' + current.id + ' · ' + current.filename + '。'); showToast('截图信息已保存。', 'success');
       } catch (error) { const message = '保存失败：' + (error?.message || '未知错误'); setStatus(message); showToast(message, 'error'); }
       finally { save.disabled = false; }
@@ -219,7 +310,7 @@ function panelScript(defaults = {}) {
       sync.disabled = true; setStatus('正在上传截图并同步到飞书多维表格…');
       try {
         const result = await window.__codexResearchSync({ session: current.session, captureId: current.id });
-        current = result.capture; const message = result.alreadySynced ? '该截图已在飞书中，无需重复同步。' : '已同步到飞书。记录编号：' + (result.recordId || current.id) + '。'; setStatus(message); showToast(message, result.alreadySynced ? 'warning' : 'success');
+        current = result.capture; const message = result.updated ? '飞书记录已更新。编号：' + (result.recordId || current.id) + '。' : '已同步到飞书。记录编号：' + (result.recordId || current.id) + '。'; setStatus(message); showToast(message, 'success');
       } catch (error) { const message = '飞书同步失败：' + (error?.message || '未知错误') + '。本地素材仍已保存。'; setStatus(message); showToast(message, 'error'); }
       finally { sync.disabled = false; }
     });
@@ -298,7 +389,7 @@ export async function attachResearchCapturePanel(context, { researchDir, default
       module,
       note,
       userTask: shortText(payload.userTask || userTask, 160),
-      observation: note,
+      observation: shortText(payload.observation || note, 500),
       analysis: '',
       evidenceLevel: 'A',
       toVerify: '',
@@ -315,6 +406,7 @@ export async function attachResearchCapturePanel(context, { researchDir, default
       metadataFilename,
     };
     library.index.captures.push(capture);
+    await writeFigmaSpecFile(library, capture);
     await writeCaptureMetadata(library, capture);
     await writeLibraryFiles(library);
     await writeJson(path.join(rootDir, 'last-capture.json'), capture);
@@ -341,13 +433,17 @@ export async function attachResearchCapturePanel(context, { researchDir, default
     capture.module = module;
     capture.note = note;
     capture.userTask = shortText(payload.userTask || capture.userTask, 160);
-    capture.observation = capture.observation || note;
+    capture.observation = shortText(payload.observation, 500) || capture.observation || note;
+    capture.analysis = shortText(payload.analysis, 500) || capture.analysis || '';
+    capture.toVerify = shortText(payload.toVerify, 300) || capture.toVerify || '';
     capture.annotations = normalizeAnnotations(payload.annotations);
+    capture.styleSnapshot = normalizeStyleSnapshot(payload.styleSnapshot) || capture.styleSnapshot || null;
     capture.updatedAt = new Date().toISOString();
     capture.filename = nextFilename;
     capture.metadataFilename = nextMetadataFilename;
     capture.screenshot = `images/${nextFilename}`;
     capture.metadata = `metadata/${nextMetadataFilename}`;
+    await writeFigmaSpecFile(library, capture);
     await writeCaptureMetadata(library, capture);
     await writeLibraryFiles(library);
     await writeJson(path.join(rootDir, 'last-capture.json'), capture);
@@ -364,14 +460,11 @@ export async function attachResearchCapturePanel(context, { researchDir, default
     const library = await getLibrary(payload.session);
     const capture = library.index.captures.find((item) => item.id === payload.captureId);
     if (!capture) throw new Error('没有找到要同步的截图。');
-    if (capture.feishu_sync?.status === 'synced') {
-      return { capture, recordId: capture.feishu_sync.record_id, alreadySynced: true };
-    }
     const synced = await syncCaptureToFeishu({ researchDir: rootDir, library, capture });
     await writeCaptureMetadata(library, synced.capture);
     await writeLibraryFiles(library);
     await writeJson(path.join(rootDir, 'last-capture.json'), synced.capture);
-    return { capture: synced.capture, recordId: synced.capture.feishu_sync.record_id };
+    return { capture: synced.capture, recordId: synced.capture.feishu_sync.record_id, updated: synced.updated };
   });
 
   await context.addInitScript({ content: panelScript({ session: defaultSession, taskId, userTask, module: defaultModule }) });

@@ -73,42 +73,48 @@ export async function readFeishuSyncConfig(researchDir) {
 }
 
 export async function syncCaptureToFeishu({ researchDir, library, capture }) {
-  if (capture.feishu_sync?.status === 'synced') {
-    return { capture, record: { record_id: capture.feishu_sync.record_id }, tableUrl: '' };
-  }
   const config = await readFeishuSyncConfig(researchDir);
-  const imagePath = path.join(library.directory, capture.screenshot);
-  const image = await fs.readFile(imagePath);
-  const form = new FormData();
-  form.append('file_name', capture.filename);
-  form.append('parent_type', 'bitable_image');
-  form.append('parent_node', config.appToken);
-  form.append('size', String(image.length));
-  form.append('file', new Blob([image], { type: 'image/png' }), capture.filename);
-  const uploaded = await feishuFetch('/open-apis/drive/v1/medias/upload_all', { method: 'POST', body: form });
+  let fileToken = capture.feishu_sync?.attachment_file_token;
+  if (!fileToken) {
+    const imagePath = path.join(library.directory, capture.screenshot);
+    const image = await fs.readFile(imagePath);
+    const form = new FormData();
+    form.append('file_name', capture.filename);
+    form.append('parent_type', 'bitable_image');
+    form.append('parent_node', config.appToken);
+    form.append('size', String(image.length));
+    form.append('file', new Blob([image], { type: 'image/png' }), capture.filename);
+    const uploaded = await feishuFetch('/open-apis/drive/v1/medias/upload_all', { method: 'POST', body: form });
+    fileToken = uploaded.file_token;
+  }
   const fields = {
     '编号': capture.id,
     '模块/路径': capture.module || capture.name,
     '用户任务': capture.userTask || '待补充',
-    '截图': [{ file_token: uploaded.file_token }],
+    '截图': [{ file_token: fileToken }],
     '观察事实': capture.observation || capture.note || '待分析',
     '分析解读': capture.analysis || '待分析',
     '证据等级': capture.evidenceLevel || 'A',
     '待验证': capture.toVerify || '待补充',
   };
-  const created = await feishuFetch(
-    `/open-apis/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) },
+  const existingRecordId = capture.feishu_sync?.record_id;
+  const endpoint = existingRecordId
+    ? `/open-apis/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records/${existingRecordId}`
+    : `/open-apis/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records`;
+  const result = await feishuFetch(
+    endpoint,
+    { method: existingRecordId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) },
   );
+  const record = result.record;
   capture.feishu_sync = {
     status: 'synced',
     app_token: config.appToken,
     table_id: config.tableId,
-    record_id: created.record?.record_id,
-    attachment_file_token: uploaded.file_token,
+    record_id: record?.record_id || existingRecordId,
+    attachment_file_token: fileToken,
     synced_at: new Date().toISOString(),
   };
-  return { capture, record: created.record, tableUrl: config.tableUrl || '' };
+  return { capture, record, updated: Boolean(existingRecordId), tableUrl: config.tableUrl || '' };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
