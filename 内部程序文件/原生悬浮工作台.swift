@@ -5,6 +5,7 @@ import SwiftUI
 
 let toolDirectory = "/Users/afly/Documents/Codex/2026-06-04/figma-figma/outputs/figma-qa-screenshot-tool（截图工具）"
 let materialLibraryURL = "https://my.feishu.cn/wiki/P9ZXwmoFYiCTzpk6eQGcsj4Hnsg?table=tbluNJHoiHttVvse&view=vewfgRMcdy"
+let researchDocumentURL = "https://my.feishu.cn/wiki/ExEcwGnW0iar0TkXJNOcQX0Xngf?larkTabName=space"
 
 struct TaskRequest: Codable { let competitor: String; let url: String; let userTask: String; let module: String }
 struct CaptureStatus: Codable {
@@ -48,13 +49,26 @@ final class WorkbenchModel: ObservableObject {
               !pageURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { errorText = "请补充竞品名称和起始页面网址。"; return }
         guard URL(string: pageURL)?.scheme != nil else { errorText = "请输入完整网址，例如 https://example.com。"; return }
         starting = true
-        startLocalService()
-        Task { [weak self] in try? await Task.sleep(for: .seconds(1.3)); await self?.submitTask(retries: 2) }
+        Task { [weak self] in
+            guard let self else { return }
+            let serviceReady = await self.isServiceAvailable()
+            if !serviceReady {
+                self.startLocalService()
+                try? await Task.sleep(for: .seconds(1.3))
+            }
+            await self.submitTask(retries: serviceReady ? 0 : 2)
+        }
     }
 
     private func startLocalService() {
         let launcher = URL(fileURLWithPath: toolDirectory).appendingPathComponent("启动AI竞调采集器.command").path
-        let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/open"); process.arguments = ["-a", "Terminal", launcher]; try? process.run()
+        let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/open"); process.arguments = ["-g", "-a", "Terminal", launcher]; try? process.run()
+    }
+
+    private func isServiceAvailable() async -> Bool {
+        guard let endpoint = URL(string: "http://127.0.0.1:48923/api/status") else { return false }
+        guard let (_, response) = try? await URLSession.shared.data(from: endpoint) else { return false }
+        return (response as? HTTPURLResponse)?.statusCode == 200
     }
 
     private func submitTask(retries: Int) async {
@@ -96,6 +110,20 @@ final class WorkbenchModel: ObservableObject {
         }
     }
 
+    func restoreCurrentTask() {
+        guard let endpoint = URL(string: "http://127.0.0.1:48923/api/status") else { return }
+        Task { [weak self] in
+            guard let self, let (data, _) = try? await URLSession.shared.data(from: endpoint), let status = try? JSONDecoder().decode(CaptureStatus.self, from: data), let task = status.activeTask, task.running == true else { return }
+            competitor = task.competitor
+            activeSession = task.competitor
+            stage = .capturing
+            let session = task.competitor.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? task.competitor
+            guard let captureEndpoint = URL(string: "http://127.0.0.1:48923/api/captures?session=\(session)"), let (captureData, _) = try? await URLSession.shared.data(from: captureEndpoint), let nextCaptures = try? JSONDecoder().decode([CapturePreview].self, from: captureData) else { return }
+            captures = nextCaptures
+            if !captures.isEmpty { stage = .review; statusText = "已收录 \(captures.count) 张截图。" }
+        }
+    }
+
     func goToStep(_ index: Int) {
         withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
             if index == 1 { stage = .details }
@@ -121,6 +149,7 @@ final class WorkbenchModel: ObservableObject {
 
     func openRecentTasks() { NSWorkspace.shared.open(URL(fileURLWithPath: toolDirectory).appendingPathComponent("截图文件/竞调任务")) }
     func openMaterialLibrary() { if let url = URL(string: materialLibraryURL) { NSWorkspace.shared.open(url) } }
+    func openResearchDocument() { if let url = URL(string: researchDocumentURL) { NSWorkspace.shared.open(url) } }
     func reset() { competitor = ""; pageURL = ""; userTask = ""; module = ""; errorText = ""; statusText = ""; captures = []; activeSession = ""; withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { stage = .details } }
 }
 
@@ -138,6 +167,7 @@ struct FloatingCard: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: interfaceCorner, style: .continuous))
         .onReceive(timer) { _ in model.refreshStatus() }
+        .onAppear { model.restoreCurrentTask() }
     }
 
     private var operationSurface: some View {
@@ -274,6 +304,10 @@ struct FloatingCard: View {
                 }
             }
             Text(model.statusText).font(.system(size: 10)).foregroundStyle(.white.opacity(0.60)).lineLimit(1)
+            HStack(spacing: 8) {
+                Button("开启下一个任务", action: model.reset).buttonStyle(SecondaryActionStyle())
+                Button("结束记录", action: model.openResearchDocument).buttonStyle(HeroButtonStyle())
+            }
         }.padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 16)
     }
 
@@ -300,6 +334,7 @@ private struct HeroButtonBody: View {
     }
 }
 struct TopLinkStyle: ButtonStyle { func makeBody(configuration: Configuration) -> some View { TopLinkBody(configuration: configuration) } }
+struct SecondaryActionStyle: ButtonStyle { func makeBody(configuration: Configuration) -> some View { configuration.label.font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.88)).padding(.vertical, 9).padding(.horizontal, 11).background(.white.opacity(configuration.isPressed ? 0.10 : 0.16), in: Capsule()).overlay(Capsule().stroke(.white.opacity(0.28), lineWidth: 1)) } }
 private struct TopLinkBody: View {
     let configuration: ButtonStyle.Configuration
     @State private var hovering = false
@@ -339,9 +374,10 @@ private struct CaptureTile: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: NSPanel!; private let model = WorkbenchModel(); private var statusItem: NSStatusItem!
     func applicationDidFinishLaunching(_ notification: Notification) {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "竞调"; statusItem.button?.toolTip = "AI 竞调采集器（点此显示或隐藏窗口）"; statusItem.button?.target = self; statusItem.button?.action = #selector(togglePanel)
-        if let iconURL = Bundle.main.url(forResource: "tool-status", withExtension: "png"), let icon = NSImage(contentsOf: iconURL) { icon.size = NSSize(width: 16, height: 16); icon.isTemplate = false; statusItem.button?.image = icon; statusItem.button?.imagePosition = .imageLeading }
+        statusItem = NSStatusBar.system.statusItem(withLength: 64)
+        statusItem.autosaveName = "AICompetitorCaptureStatusItem"
+        statusItem.button?.title = " 竞调"; statusItem.button?.font = .systemFont(ofSize: 12, weight: .semibold); statusItem.button?.toolTip = "AI 竞调采集器（点此显示或隐藏窗口）"; statusItem.button?.target = self; statusItem.button?.action = #selector(togglePanel); statusItem.button?.imagePosition = .imageLeft; statusItem.button?.imageScaling = .scaleProportionallyDown
+        if let iconURL = Bundle.main.url(forResource: "tool-status", withExtension: "png"), let icon = NSImage(contentsOf: iconURL) { icon.size = NSSize(width: 18, height: 18); icon.isTemplate = false; statusItem.button?.image = icon }
         panel = InputPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 704), styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
         panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true; panel.isOpaque = false; panel.backgroundColor = .clear; panel.appearance = NSAppearance(named: .darkAqua); panel.hasShadow = true; panel.level = .floating; panel.isFloatingPanel = true; panel.hidesOnDeactivate = false; panel.isMovableByWindowBackground = true; panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.becomesKeyOnlyIfNeeded = false
@@ -351,7 +387,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hosting.frame = container.bounds; hosting.autoresizingMask = [.width, .height]; container.addSubview(hosting)
         panel.contentView = container
         model.closeWindow = { [weak self] in self?.panel.orderOut(nil) }
-        model.minimizeWindow = { [weak self] in self?.panel.miniaturize(nil) }
+        model.minimizeWindow = { [weak self] in self?.panel.orderOut(nil) }
         model.zoomWindow = { [weak self] in self?.panel.zoom(nil) }
         model.setPinned = { [weak self] pinned in self?.panel.level = pinned ? .floating : .normal }
         installEditMenu()
