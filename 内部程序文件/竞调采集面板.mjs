@@ -217,10 +217,10 @@ function panelScript(defaults = {}) {
     root.appendChild(toast);
 
     const mount = () => {
-      const target = document.documentElement || document.body;
+      const target = document.body || document.documentElement;
       if (target && !host.isConnected) target.appendChild(host);
     };
-    if (document.documentElement || document.body) mount();
+    if (document.body) mount();
     else document.addEventListener('DOMContentLoaded', mount, { once: true });
     // SPA 在首屏加载后可能替换 body/根容器；检测到面板被移除时立刻重新挂载。
     const keepMounted = () => mount();
