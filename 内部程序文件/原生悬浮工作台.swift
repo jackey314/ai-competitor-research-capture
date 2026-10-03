@@ -14,8 +14,12 @@ struct CaptureStatus: Codable {
     struct LatestCapture: Codable { let session: String; let name: String; let syncStatus: String }
 }
 struct CapturePreview: Codable, Identifiable { let id: String; let name: String; let module: String; let syncStatus: String; let imageUrl: String }
+struct RecentTask: Codable, Identifiable {
+    let taskId: String; let competitor: String; let startUrl: String; let userTask: String; let module: String; let createdAt: String
+    var id: String { taskId }
+}
 
-enum WorkbenchStage { case landing, details, capturing, review, complete }
+enum WorkbenchStage { case landing, details, capturing, review, complete, recents }
 
 @MainActor
 final class WorkbenchModel: ObservableObject {
@@ -30,6 +34,7 @@ final class WorkbenchModel: ObservableObject {
     @Published var captures: [CapturePreview] = []
     @Published var isPinned = true
     @Published var activeSession = ""
+    @Published var recentTasks: [RecentTask] = []
     var closeWindow: (() -> Void)?
     var minimizeWindow: (() -> Void)?
     var zoomWindow: (() -> Void)?
@@ -147,7 +152,16 @@ final class WorkbenchModel: ObservableObject {
 
     func togglePin() { isPinned.toggle(); setPinned?(isPinned) }
 
-    func openRecentTasks() { NSWorkspace.shared.open(URL(fileURLWithPath: toolDirectory).appendingPathComponent("截图文件/竞调任务")) }
+    func openRecentTasks() {
+        errorText = ""; statusText = ""; stage = .recents
+        guard let endpoint = URL(string: "http://127.0.0.1:48923/api/tasks") else { return }
+        Task { [weak self] in
+            guard let self, let (data, response) = try? await URLSession.shared.data(from: endpoint), (response as? HTTPURLResponse)?.statusCode == 200 else { self?.errorText = "最近任务暂时无法加载。"; return }
+            recentTasks = (try? JSONDecoder().decode([RecentTask].self, from: data)) ?? []
+        }
+    }
+    func openTaskURL(_ task: RecentTask) { if let url = URL(string: task.startUrl) { NSWorkspace.shared.open(url) } }
+    func returnToWorkbench() { stage = activeSession.isEmpty ? .details : .capturing }
     func openMaterialLibrary() { if let url = URL(string: materialLibraryURL) { NSWorkspace.shared.open(url) } }
     func openResearchDocument() { if let url = URL(string: researchDocumentURL) { NSWorkspace.shared.open(url) } }
     func reset() { competitor = ""; pageURL = ""; userTask = ""; module = ""; errorText = ""; statusText = ""; captures = []; activeSession = ""; withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { stage = .details } }
@@ -160,9 +174,14 @@ struct FloatingCard: View {
     private let interfaceCorner: CGFloat = 18
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            operationSurface
-            mirrorControls.padding(.leading, 26).padding(.top, 24)
+        GeometryReader { geometry in
+            ZStack(alignment: .topLeading) {
+                operationSurface
+                mirrorControls(compact: geometry.size.width < 420)
+                    .padding(.leading, geometry.size.width < 420 ? 14 : 26)
+                    .padding(.top, geometry.size.height < 580 ? 14 : 24)
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: interfaceCorner, style: .continuous))
@@ -183,12 +202,12 @@ struct FloatingCard: View {
         .overlay(RoundedRectangle(cornerRadius: interfaceCorner, style: .continuous).stroke(.white.opacity(0.24), lineWidth: 1))
     }
 
-    private var mirrorControls: some View {
-        HStack(spacing: 11) {
+    private func mirrorControls(compact: Bool) -> some View {
+        HStack(spacing: compact ? 7 : 11) {
             MirrorControl(color: Color(red: 1, green: 0.30, blue: 0.34), help: "收起窗口", action: { model.closeWindow?() })
             MirrorControl(color: Color(red: 1, green: 0.76, blue: 0.08), help: "最小化窗口", action: { model.minimizeWindow?() })
             MirrorControl(color: Color(red: 0.16, green: 0.78, blue: 0.38), help: "新建调研任务", action: model.reset)
-            Divider().frame(height: 16).overlay(.white.opacity(0.25))
+            if !compact { Divider().frame(height: 16).overlay(.white.opacity(0.25)) }
             Button(action: model.togglePin) { Image(systemName: model.isPinned ? "pin.fill" : "pin").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(model.isPinned ? 0.96 : 0.58)).frame(width: 23, height: 20).background(.black.opacity(0.16), in: Capsule()) }
                 .buttonStyle(.plain).help(model.isPinned ? "取消页面置顶" : "页面置顶")
         }
@@ -220,7 +239,7 @@ struct FloatingCard: View {
                     Spacer()
                     Button(action: model.continueToDetails) { Text("开始采集").frame(width: 184) }.buttonStyle(HeroButtonStyle()).padding(.bottom, 42)
                 }
-            }.frame(maxWidth: 430, minHeight: 430, maxHeight: 470)
+            }.frame(maxWidth: 430, minHeight: 430, maxHeight: 470).padding(.horizontal, 16)
             Spacer(minLength: 22)
         }
     }
@@ -233,12 +252,13 @@ struct FloatingCard: View {
             glassPanel {
                 VStack(spacing: 0) {
                     progressBar
-                    if model.stage == .details { detailsForm }
+                    if model.stage == .recents { recentTasksState }
+                    else if model.stage == .details { detailsForm }
                     else if model.stage == .capturing { capturingState }
                     else if model.stage == .review { reviewState }
                     else { completedState }
                 }
-            }.frame(maxWidth: 430, minHeight: 455, maxHeight: 505)
+            }.frame(maxWidth: 430, minHeight: 455, maxHeight: 505).padding(.horizontal, 16)
             Spacer(minLength: 18)
         }
     }
@@ -289,6 +309,32 @@ struct FloatingCard: View {
                 Button(action: model.launchTask) { Text(model.starting ? "正在打开…" : "打开采集浏览器").frame(maxWidth: .infinity) }.buttonStyle(HeroButtonStyle()).disabled(model.starting).padding(.top, 3)
             }.padding(.horizontal, 18).padding(.top, 22).padding(.bottom, 18)
         }
+    }
+
+    private var recentTasksState: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { VStack(alignment: .leading, spacing: 3) { Text("最近任务").font(.system(size: 20, weight: .semibold)).foregroundStyle(.white); Text("保留最近 15 天的采集入口；点击链接可重新打开对应网站。") .font(.system(size: 10)).foregroundStyle(.white.opacity(0.66)) }; Spacer(); Button("返回", action: model.returnToWorkbench).buttonStyle(SecondaryActionStyle()) }
+            if model.recentTasks.isEmpty {
+                Spacer(); Text("最近 15 天暂无任务").font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.82)); Text("从“竞品目标”填写网址，即可开始新的采集。") .font(.system(size: 11)).foregroundStyle(.white.opacity(0.58)); Spacer()
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 8) {
+                        ForEach(model.recentTasks) { task in
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack { Text(task.competitor).font(.system(size: 13, weight: .semibold)); Spacer(); Text(task.createdAt.replacingOccurrences(of: "T", with: " ").prefix(16)).font(.system(size: 9)).foregroundStyle(.white.opacity(0.56)) }
+                                Text(task.userTask.isEmpty ? "自由走查并沉淀关键截图" : task.userTask).font(.system(size: 10)).foregroundStyle(.white.opacity(0.76)).lineLimit(2)
+                                if !task.module.isEmpty { Text(task.module).font(.system(size: 9)).foregroundStyle(.white.opacity(0.56)) }
+                                Button("打开原始网页", action: { model.openTaskURL(task) }).buttonStyle(SecondaryActionStyle())
+                            }
+                            .padding(11).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.black.opacity(0.13), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.18), lineWidth: 1))
+                        }
+                    }
+                }
+            }
+            if !model.errorText.isEmpty { Text(model.errorText).font(.system(size: 10)).foregroundStyle(Color(red: 1, green: 0.76, blue: 0.73)) }
+        }.padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 16)
     }
 
     private var capturingState: some View {
@@ -379,6 +425,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.title = " 竞调"; statusItem.button?.font = .systemFont(ofSize: 12, weight: .semibold); statusItem.button?.toolTip = "AI 竞调采集器（点此显示或隐藏窗口）"; statusItem.button?.target = self; statusItem.button?.action = #selector(togglePanel); statusItem.button?.imagePosition = .imageLeft; statusItem.button?.imageScaling = .scaleProportionallyDown
         if let iconURL = Bundle.main.url(forResource: "tool-status", withExtension: "png"), let icon = NSImage(contentsOf: iconURL) { icon.size = NSSize(width: 18, height: 18); icon.isTemplate = false; statusItem.button?.image = icon }
         panel = InputPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 704), styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
+        panel.minSize = NSSize(width: 360, height: 540)
         panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true; panel.isOpaque = false; panel.backgroundColor = .clear; panel.appearance = NSAppearance(named: .darkAqua); panel.hasShadow = true; panel.level = .floating; panel.isFloatingPanel = true; panel.hidesOnDeactivate = false; panel.isMovableByWindowBackground = true; panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.becomesKeyOnlyIfNeeded = false
         let container = NSView(frame: panel.contentView?.bounds ?? .zero)

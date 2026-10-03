@@ -15,6 +15,7 @@ const normalCaptureDir = path.join(toolDir, '截图文件', '普通截图');
 const profileDir = path.join(toolDir, '浏览器资料');
 const port = 48923;
 const nodeBin = process.execPath;
+const TASK_RETENTION_DAYS = 15;
 let activeTask = null;
 
 function send(res, status, body, type = 'application/json; charset=utf-8') {
@@ -45,7 +46,14 @@ async function readBody(req) {
 
 async function listTasks() {
   const entries = await fs.readdir(taskDir, { withFileTypes: true }).catch(() => []);
-  const tasks = await Promise.all(entries.filter((entry) => entry.isFile() && entry.name.endsWith('.json')).map((entry) => readJson(path.join(taskDir, entry.name))));
+  const expiry = Date.now() - TASK_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const tasks = (await Promise.all(entries.filter((entry) => entry.isFile() && entry.name.endsWith('.json')).map(async (entry) => {
+    const filePath = path.join(taskDir, entry.name);
+    const task = await readJson(filePath);
+    const timestamp = Date.parse(task?.createdAt || '') || (await fs.stat(filePath).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs;
+    if (timestamp < expiry && task?.taskId !== activeTask?.taskId) { await fs.rm(filePath, { force: true }); return null; }
+    return task;
+  })));
   return tasks.filter(Boolean).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 12);
 }
 
