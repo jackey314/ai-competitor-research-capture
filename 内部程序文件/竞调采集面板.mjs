@@ -222,6 +222,10 @@ function panelScript(defaults = {}) {
     };
     if (document.documentElement || document.body) mount();
     else document.addEventListener('DOMContentLoaded', mount, { once: true });
+    // SPA 在首屏加载后可能替换 body/根容器；检测到面板被移除时立刻重新挂载。
+    const keepMounted = () => mount();
+    new MutationObserver(keepMounted).observe(document.documentElement, { childList: true, subtree: true });
+    setInterval(keepMounted, 800);
     const $ = (id) => root.getElementById(id);
     const trigger = $('trigger'); const panel = $('panel'); const close = $('close');
     const session = $('session'); const task = $('task'); const name = $('name'); const module = $('module'); const note = $('note');
