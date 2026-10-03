@@ -489,5 +489,9 @@ export async function attachResearchCapturePanel(context, { researchDir, default
     return { capture: synced.capture, recordId: synced.capture.feishu_sync.record_id, updated: synced.updated };
   });
 
-  await context.addInitScript({ content: panelScript({ session: defaultSession, taskId, userTask, module: defaultModule }) });
+  // 新标签和后续跳转通过 init script 注入；同时立即补注入已存在的持久化首个标签，
+  // 避免某些浏览器启动页或快速跳转导致右下角入口缺失。
+  const script = panelScript({ session: defaultSession, taskId, userTask, module: defaultModule });
+  await context.addInitScript({ content: script });
+  await Promise.all(context.pages().map((page) => page.evaluate(script).catch(() => {})));
 }
