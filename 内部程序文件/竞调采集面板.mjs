@@ -255,7 +255,7 @@ function panelScript(defaults = {}) {
       '<div class="field"><label for="module">模块</label><input id="module" maxlength="80" placeholder="例如：分镜编辑" /></div>' +
       '<div class="field"><label for="note">页面备注 / 路径</label><textarea id="note" maxlength="300" placeholder="记录当前路径、功能名称或上下文"></textarea></div>' +
       '<button class="primary" id="capture" type="button">截图并预览</button><p class="hint">截图时采集面板会自动隐藏，不会出现在图片中。</p><p class="status" id="status" aria-live="polite"></p>' +
-      '<div class="preview" id="preview"><strong>截图已保存</strong><p class="hint">AI 会先读取截图生成草稿；请按实际页面核对后再同步。</p><div class="stage" id="stage"><img id="image" alt="刚采集的页面截图预览" /><div id="pins"></div></div><div class="annotation-list" id="annotations"></div><button class="primary" id="draft" type="button">AI 分析此截图</button><p class="hint">分析结果不会自动同步；确认无误后由你保存。</p><details class="advanced" id="advanced"><summary>补充研究与 UX 细节（可选）</summary><div class="field"><label for="observation">观察事实</label><textarea id="observation" maxlength="500" placeholder="只描述画面中可直接确认的事实"></textarea></div><div class="field"><label for="analysis">分析解读</label><textarea id="analysis" maxlength="500" placeholder="基于事实的产品判断；避免把猜测写成事实"></textarea></div><div class="field"><label for="verify">待验证</label><textarea id="verify" maxlength="300" placeholder="下一步需进入何处、验证什么"></textarea></div><div class="field"><label for="ux-state">UX 状态</label><select id="ux-state" aria-label="UX 状态"><option>常规</option><option>加载中</option><option>成功</option><option>失败</option><option>缺省</option><option>无权限</option><option>禁用</option></select></div><div class="field"><label for="ux-trigger">触发动作与用户期待</label><textarea id="ux-trigger" maxlength="240" placeholder="例如：点击生成，期待看到进度和可取消入口"></textarea></div><div class="field"><label for="ux-feedback">可见反馈 / 状态文案</label><textarea id="ux-feedback" maxlength="500" placeholder="原样记录文案、图标、进度、骨架或错误提示"></textarea></div><div class="field"><label for="ux-recovery">恢复路径 / 下一步</label><textarea id="ux-recovery" maxlength="300" placeholder="例如：重试、返回上一步、联系客服或创建第一条内容"></textarea></div><div class="field"><label for="ux-accessibility">可访问性线索（可选）</label><textarea id="ux-accessibility" maxlength="300" placeholder="例如：状态是否只靠颜色；按钮文字是否说明操作"></textarea></div><div class="actions"><button class="secondary" id="inspect" type="button">读取 UI 数值</button><button class="save" id="save" type="button">保存补充</button></div><p class="hint" id="inspect-hint">点击“读取 UI 数值”后，再点网页中的任一元素；不会触发该网页操作。</p><div class="spec" id="spec" hidden></div></details><div class="actions"><button class="secondary" id="open-library" type="button">返回采集器</button><button class="save" id="save-main" type="button">保存</button></div><button class="primary" id="sync" type="button">确认并同步到飞书</button></div>' +
+      '<div class="preview" id="preview"><strong>截图已保存</strong><p class="hint">AI 会先读取截图生成草稿；请按实际页面核对后再同步。</p><div class="stage" id="stage"><img id="image" alt="刚采集的页面截图预览" /><div id="pins"></div></div><div class="annotation-list" id="annotations"></div><button class="primary" id="draft" type="button">AI 分析此截图</button><p class="hint">分析结果不会自动同步；确认无误后由你保存。</p><details class="advanced" id="advanced"><summary>补充研究与 UX 细节（可选）</summary><div class="field"><label for="observation">观察事实</label><textarea id="observation" maxlength="500" placeholder="只描述画面中可直接确认的事实"></textarea></div><div class="field"><label for="analysis">分析解读</label><textarea id="analysis" maxlength="500" placeholder="基于事实的产品判断；避免把猜测写成事实"></textarea></div><div class="field"><label for="verify">待验证</label><textarea id="verify" maxlength="300" placeholder="下一步需进入何处、验证什么"></textarea></div><div class="field"><label for="ux-state">UX 状态</label><select id="ux-state" aria-label="UX 状态"><option>常规</option><option>加载中</option><option>成功</option><option>失败</option><option>缺省</option><option>无权限</option><option>禁用</option></select></div><div class="field"><label for="ux-trigger">触发动作与用户期待</label><textarea id="ux-trigger" maxlength="240" placeholder="例如：点击生成，期待看到进度和可取消入口"></textarea></div><div class="field"><label for="ux-feedback">可见反馈 / 状态文案</label><textarea id="ux-feedback" maxlength="500" placeholder="原样记录文案、图标、进度、骨架或错误提示"></textarea></div><div class="field"><label for="ux-recovery">恢复路径 / 下一步</label><textarea id="ux-recovery" maxlength="300" placeholder="例如：重试、返回上一步、联系客服或创建第一条内容"></textarea></div><div class="field"><label for="ux-accessibility">可访问性线索（可选）</label><textarea id="ux-accessibility" maxlength="300" placeholder="例如：状态是否只靠颜色；按钮文字是否说明操作"></textarea></div><div class="actions"><button class="secondary" id="inspect" type="button">读取 UI 数值</button><button class="save" id="save" type="button">保存补充</button></div><p class="hint" id="inspect-hint">点击“读取 UI 数值”后，再点网页中的任一元素；不会触发该网页操作。</p><div class="spec" id="spec" hidden></div></details><div class="actions"><button class="secondary" id="open-library" type="button">继续截图</button><button class="save" id="save-main" type="button">保存</button></div><button class="primary" id="sync" type="button">确认并同步到飞书</button></div>' +
       '</section>';
 
     const toast = document.createElement('div');
@@ -369,21 +369,22 @@ function panelScript(defaults = {}) {
       try {
         const result = await window.__codexResearchCapture({ session: session.value, taskId: taskDefaults.taskId, userTask: task.value, name: cleanName(name.value) || document.title || '未命名页面', module: module.value, note: note.value });
         if (result.duplicate) { setStatus(result.message); showToast(result.message, 'warning'); return; }
-        current = result.capture; marks = Array.isArray(current.annotations) ? current.annotations : []; selectedStyle = current.styleSnapshot || null; observation.value = current.observation || ''; analysis.value = current.analysis || ''; verify.value = current.toVerify || ''; uxState.value = current.uxEvidence?.state || '常规'; uxTrigger.value = current.uxEvidence?.trigger || ''; uxFeedback.value = current.uxEvidence?.feedback || ''; uxRecovery.value = current.uxEvidence?.recovery || ''; uxAccessibility.value = current.uxEvidence?.accessibility || ''; image.src = result.preview; preview.dataset.visible = 'true'; renderMarks(); renderSpec(); clearInspect();
+        current = result.capture; marks = Array.isArray(current.annotations) ? current.annotations : []; selectedStyle = current.styleSnapshot || null; observation.value = current.observation || ''; analysis.value = current.analysis || ''; verify.value = current.toVerify || ''; uxState.value = current.uxEvidence?.state || '常规'; uxTrigger.value = current.uxEvidence?.trigger || ''; uxFeedback.value = current.uxEvidence?.feedback || ''; uxRecovery.value = current.uxEvidence?.recovery || ''; uxAccessibility.value = current.uxEvidence?.accessibility || ''; saveMain.textContent = '保存'; image.src = result.preview; preview.dataset.visible = 'true'; renderMarks(); renderSpec(); clearInspect();
         setStatus('已入库 ' + current.id + ' · ' + current.filename + '。可继续修改名称或添加标注。'); showToast('截图 ' + current.id + ' 已成功入库。', 'success');
       } catch (error) { const message = '截图失败：' + (error?.message || '未知错误'); setStatus(message); showToast(message, 'error'); }
       finally { capture.disabled = false; }
     });
-    save.addEventListener('click', async () => {
-      if (!current || !window.__codexResearchUpdate) return;
-      save.disabled = true; setStatus('正在保存信息与标注…');
+    const saveCurrent = async () => {
+      if (!current || !window.__codexResearchUpdate) return false;
+      save.disabled = true; saveMain.disabled = true; setStatus('正在保存信息与标注…');
       try {
         const result = await window.__codexResearchUpdate({ session: current.session, captureId: current.id, userTask: task.value, name: cleanName(name.value) || current.name, module: module.value, note: note.value, observation: observation.value, analysis: analysis.value, toVerify: verify.value, uxEvidence: { state: uxState.value, trigger: uxTrigger.value, feedback: uxFeedback.value, recovery: uxRecovery.value, accessibility: uxAccessibility.value }, annotations: marks, styleSnapshot: selectedStyle });
-        current = result.capture; marks = current.annotations || []; renderMarks(); setStatus('已更新 ' + current.id + ' · ' + current.filename + '。'); showToast('截图信息已保存。', 'success');
-      } catch (error) { const message = '保存失败：' + (error?.message || '未知错误'); setStatus(message); showToast(message, 'error'); }
-      finally { save.disabled = false; }
-    });
-    saveMain.addEventListener('click', () => save.click());
+        current = result.capture; marks = current.annotations || []; renderMarks(); saveMain.textContent = '更新保存'; setStatus('已保存 ' + current.id + ' · ' + current.filename + '。'); showToast('截图信息已保存。', 'success'); return true;
+      } catch (error) { const message = '保存失败：' + (error?.message || '未知错误'); setStatus(message); showToast(message, 'error'); return false; }
+      finally { save.disabled = false; saveMain.disabled = false; }
+    };
+    save.addEventListener('click', saveCurrent);
+    saveMain.addEventListener('click', saveCurrent);
     sync.addEventListener('click', async () => {
       if (!current || !window.__codexResearchSync) return;
       sync.disabled = true; setStatus('正在上传截图并同步到飞书多维表格…');
@@ -394,8 +395,9 @@ function panelScript(defaults = {}) {
       finally { sync.disabled = false; }
     });
     openLibrary.addEventListener('click', async () => {
-      if (!window.__codexResearchOpenLibrary) return;
-      await window.__codexResearchOpenLibrary({ session: current?.session || session.value }); setStatus('已返回采集器，可在截图沉淀中查看记录。');
+      if (!current) { closePanel(); return; }
+      const saved = await saveCurrent();
+      if (saved) { preview.dataset.visible = 'false'; current = null; marks = []; clearInspect(); closePanel(); showToast('已保存，可继续截图。', 'success'); }
     });
   })();`;
 }
