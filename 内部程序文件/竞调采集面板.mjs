@@ -436,8 +436,14 @@ export async function attachResearchCapturePanel(context, { researchDir, default
     await writeJson(filePath, capture);
   }
 
+  async function refreshLibraryIndex(library) {
+    const latest = await readJson(library.indexPath, null);
+    if (latest && Array.isArray(latest.captures)) library.index = latest;
+  }
+
   await context.exposeBinding('__codexResearchCapture', async (source, payload = {}) => {
     const library = await getLibrary(payload.session);
+    await refreshLibraryIndex(library);
     const page = source.page;
     const name = shortText(payload.name, 100) || await page.title() || '未命名页面';
     const module = shortText(payload.module, 80);
