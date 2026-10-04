@@ -92,7 +92,7 @@ async function getKeychainValue(service, fallback = '') {
   ));
 }
 
-async function analyzeScreenshotWithVision(library, capture) {
+export async function analyzeScreenshotWithVision(library, capture) {
   const [key, baseURL, model] = await Promise.all([
     getKeychainValue('AICompetitorResearchOpenAIKey'),
     getKeychainValue('AICompetitorResearchVisionBaseURL', 'https://api.openai.com/v1'),
@@ -100,35 +100,51 @@ async function analyzeScreenshotWithVision(library, capture) {
   ]);
   const image = await fs.readFile(path.join(library.directory, capture.screenshot));
   const instruction = [
-    '你是一名资深产品与 UX 研究员。仅根据截图中可直接看见的信息，用中文输出 JSON。',
+    '你是一名资深产品与 UX 研究员。仅根据截图可见信息进行中文提炼，不要杜撰。',
     '不要杜撰不可见的交互、性能或业务规则；不确定的内容写入 toVerify。',
     `当前页面名称：${capture.name}；模块：${capture.module || '未填写'}；研究任务：${capture.userTask || '未填写'}。`,
-    'observation 只写可见事实；analysis 是基于事实的初步产品判断；uxState 只能使用：常规、加载中、成功、失败、缺省、无权限、禁用。',
+    '只输出一行，按这个顺序填写：状态：常规/加载中/成功/失败/缺省/无权限/禁用；事实：…；解读：…；待验证：…；触发：…；反馈：…；下一步：…；可访问性：…。每项不超过 60 字。',
   ].join('\n');
-  const response = await fetch(`${baseURL.replace(/\/$/, '')}/responses`, {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45_000);
+  let response;
+  try {
+    response = await fetch(`${baseURL.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
+    signal: controller.signal,
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model, store: false,
-      input: [{ role: 'user', content: [
-        { type: 'input_text', text: instruction },
-        { type: 'input_image', image_url: `data:image/png;base64,${image.toString('base64')}`, detail: 'high' },
+      model, max_tokens: 400,
+      messages: [{ role: 'user', content: [
+        { type: 'text', text: instruction },
+        { type: 'image_url', image_url: { url: `data:image/png;base64,${image.toString('base64')}`, detail: 'low' } },
       ] }],
-      text: { format: { type: 'json_schema', name: 'research_capture_analysis', strict: true, schema: {
-        type: 'object', additionalProperties: false,
-        properties: {
-          observation: { type: 'string' }, analysis: { type: 'string' }, toVerify: { type: 'string' },
-          uxState: { type: 'string', enum: ['常规', '加载中', '成功', '失败', '缺省', '无权限', '禁用'] },
-          trigger: { type: 'string' }, feedback: { type: 'string' }, recovery: { type: 'string' }, accessibility: { type: 'string' },
-        }, required: ['observation', 'analysis', 'toVerify', 'uxState', 'trigger', 'feedback', 'recovery', 'accessibility'],
-      } } },
     }),
-  });
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('视觉分析超过 45 秒未返回，请稍后重试。');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   const result = await response.json();
   if (!response.ok) throw new Error(result?.error?.message || '视觉分析请求失败。');
-  const outputText = result.output_text || result.output?.flatMap((item) => item.content || []).find((item) => item.type === 'output_text')?.text;
-  try { return JSON.parse(outputText); }
-  catch { throw new Error('视觉分析返回格式异常，请重试。'); }
+  const outputText = typeof result.choices?.[0]?.message?.content === 'string'
+    ? result.choices[0].message.content
+    : result.choices?.[0]?.message?.content?.map((item) => item.text || '').join('') || '';
+  const readField = (label) => String(outputText).match(new RegExp(`(?:^|[；;]\\s*)${label}[：:]\\s*(.*?)(?=(?:[；;]\\s*(?:状态|事实|解读|待验证|触发|反馈|下一步|可访问性)[：:])|$)`))?.[1]?.trim() || '';
+  const allowedStates = new Set(['常规', '加载中', '成功', '失败', '缺省', '无权限', '禁用']);
+  const proposedState = readField('状态');
+  return {
+    observation: readField('事实') || String(outputText).trim(),
+    analysis: readField('解读') || String(outputText).trim(),
+    toVerify: readField('待验证'),
+    uxState: allowedStates.has(proposedState) ? proposedState : (String(capture.name).includes('加载') ? '加载中' : '常规'),
+    trigger: readField('触发'),
+    feedback: readField('反馈'),
+    recovery: readField('下一步'),
+    accessibility: readField('可访问性'),
+  };
 }
 
 function createEmptyIndex(session, displayName) {
