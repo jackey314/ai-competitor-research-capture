@@ -118,7 +118,7 @@ final class WorkbenchModel: ObservableObject {
             if let latest = status.latestCapture, latest.session == activeSession, latest.syncStatus == "已同步飞书", handledSyncedCaptureID != latest.id {
                 handledSyncedCaptureID = latest.id
                 statusText = "截图已成功同步到飞书，即将继续采集下一张。"
-                withAnimation(.spring(response: 0.36, dampingFraction: 0.88)) { stage = .complete }
+                withAnimation(.spring(response: 0.36, dampingFraction: 0.88)) { self.stage = .complete }
                 Task { [weak self] in
                     try? await Task.sleep(for: .seconds(2.2))
                     guard let self, self.stage == .complete else { return }
