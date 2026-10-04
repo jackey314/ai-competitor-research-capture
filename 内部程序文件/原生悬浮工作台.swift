@@ -190,8 +190,13 @@ struct FloatingCard: View {
 
     var body: some View {
         GeometryReader { geometry in
-            operationSurface(availableWidth: geometry.size.width)
-                .frame(width: geometry.size.width, height: geometry.size.height)
+            ZStack(alignment: .top) {
+                operationSurface(availableWidth: geometry.size.width)
+                topBar(compact: geometry.size.width < 430)
+                    .padding(.horizontal, geometry.size.width < 430 ? 14 : 24)
+                    .padding(.top, geometry.size.height < 580 ? 14 : 20)
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: interfaceCorner, style: .continuous))
@@ -205,7 +210,6 @@ struct FloatingCard: View {
             Image(nsImage: backgroundImage()).resizable().scaledToFill().clipped()
             Color(red: 0.01, green: 0.15, blue: 0.42).opacity(0.22)
             VStack(spacing: 0) {
-                topBar(compact: availableWidth < 430)
                 if model.stage == .landing { landing(availableWidth: availableWidth) } else { journey(availableWidth: availableWidth) }
             }
         }
@@ -235,15 +239,13 @@ struct FloatingCard: View {
                 Button("素材库", action: model.openMaterialLibrary).buttonStyle(TopLinkStyle())
             }
         }
-        // 顶部操作栏始终使用相同内边距，窗口宽度变化时由 HStack 自然收放。
-        .padding(.horizontal, compact ? 14 : 24)
-        .padding(.vertical, compact ? 14 : 20)
+        // 由外层 ZStack 固定锚定在安全区内，不参与正文垂直布局。
     }
 
     private func landing(availableWidth: CGFloat) -> some View {
         let cardWidth = max(300, min(430, availableWidth - 40))
         return VStack(spacing: 0) {
-            Spacer().frame(height: 42)
+            Spacer().frame(height: availableWidth < 430 ? 74 : 82)
             heroTitle(compact: availableWidth < 430)
             Spacer().frame(height: 42)
             glassPanel {
@@ -266,7 +268,7 @@ struct FloatingCard: View {
         let compact = availableWidth < 430
         let cardWidth = max(300, min(430, availableWidth - 40))
         return VStack(spacing: 0) {
-            Spacer().frame(height: compact ? 18 : 26)
+            Spacer().frame(height: compact ? 72 : 82)
             heroTitle(compact: compact)
             Spacer().frame(height: compact ? 20 : 30)
             glassPanel {
