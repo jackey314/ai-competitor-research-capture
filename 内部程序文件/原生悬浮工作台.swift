@@ -190,13 +190,8 @@ struct FloatingCard: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .topLeading) {
-                operationSurface(availableWidth: geometry.size.width)
-                mirrorControls(compact: geometry.size.width < 420)
-                    .padding(.leading, geometry.size.width < 420 ? 14 : 26)
-                    .padding(.top, geometry.size.height < 580 ? 14 : 24)
-            }
-            .frame(width: geometry.size.width, height: geometry.size.height)
+            operationSurface(availableWidth: geometry.size.width)
+                .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: interfaceCorner, style: .continuous))
@@ -210,7 +205,7 @@ struct FloatingCard: View {
             Image(nsImage: backgroundImage()).resizable().scaledToFill().clipped()
             Color(red: 0.01, green: 0.15, blue: 0.42).opacity(0.22)
             VStack(spacing: 0) {
-                navigation(compact: availableWidth < 430)
+                topBar(compact: availableWidth < 430)
                 if model.stage == .landing { landing(availableWidth: availableWidth) } else { journey(availableWidth: availableWidth) }
             }
         }
@@ -229,15 +224,20 @@ struct FloatingCard: View {
         }
     }
 
-    private func navigation(compact: Bool) -> some View {
+    private func topBar(compact: Bool) -> some View {
         HStack(spacing: compact ? 10 : 18) {
-            Spacer()
-            Button("最近任务", action: model.openRecentTasks).buttonStyle(TopLinkStyle())
-            Button("素材库", action: model.openMaterialLibrary).buttonStyle(TopLinkStyle())
+            mirrorControls(compact: compact)
+            Spacer(minLength: 12)
+            if compact {
+                Button("任务", action: model.openRecentTasks).buttonStyle(TopLinkStyle())
+            } else {
+                Button("最近任务", action: model.openRecentTasks).buttonStyle(TopLinkStyle())
+                Button("素材库", action: model.openMaterialLibrary).buttonStyle(TopLinkStyle())
+            }
         }
-        // 固定顶部安全外边距，避开左上角窗口控制区，缩放时也不贴边或被裁切。
-        .padding(.top, compact ? 54 : 58)
-        .padding(.trailing, compact ? 14 : 26)
+        // 顶部操作栏始终使用相同内边距，窗口宽度变化时由 HStack 自然收放。
+        .padding(.horizontal, compact ? 14 : 24)
+        .padding(.vertical, compact ? 14 : 20)
     }
 
     private func landing(availableWidth: CGFloat) -> some View {
