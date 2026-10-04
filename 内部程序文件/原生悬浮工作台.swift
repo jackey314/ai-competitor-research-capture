@@ -37,6 +37,7 @@ final class WorkbenchModel: ObservableObject {
     @Published var activeSession = ""
     @Published var recentTasks: [RecentTask] = []
     @Published var selectedCapture: CapturePreview?
+    @Published var showFigmaConfirmation = false
     private var handledSyncedCaptureID = ""
     var closeWindow: (() -> Void)?
     var minimizeWindow: (() -> Void)?
@@ -179,6 +180,7 @@ final class WorkbenchModel: ObservableObject {
     func openMaterialLibrary() { if let url = URL(string: materialLibraryURL) { NSWorkspace.shared.open(url) } }
     func openResearchDocument() { if let url = URL(string: researchDocumentURL) { NSWorkspace.shared.open(url) } }
     func openFigmaResearchBoard() { if let url = URL(string: figmaResearchURL) { NSWorkspace.shared.open(url) } }
+    func requestFigmaSynthesis() { showFigmaConfirmation = true }
     func reset() { competitor = ""; pageURL = ""; userTask = ""; module = ""; errorText = ""; statusText = ""; captures = []; activeSession = ""; handledSyncedCaptureID = ""; withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { stage = .details } }
 }
 
@@ -203,6 +205,12 @@ struct FloatingCard: View {
         .onReceive(timer) { _ in model.refreshStatus() }
         .onAppear { model.restoreCurrentTask() }
         .sheet(item: $model.selectedCapture) { capture in CaptureDetailSheet(capture: capture) }
+        .alert("开始视觉沉淀？", isPresented: $model.showFigmaConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("打开 Figma 沉淀板") { model.openFigmaResearchBoard() }
+        } message: {
+            Text("将基于当前已收录的 \(model.captures.count) 张截图，汇总视觉样式、页面状态与 AI 分析结果。请确认本轮截图已基本完整后再开始。")
+        }
     }
 
     private func operationSurface(availableWidth: CGFloat) -> some View {
@@ -374,7 +382,7 @@ struct FloatingCard: View {
             Text(model.statusText).font(.system(size: 10)).foregroundStyle(.white.opacity(0.60)).lineLimit(1)
             HStack(spacing: 8) {
                 Button("飞书资产", action: model.openMaterialLibrary).buttonStyle(SecondaryActionStyle())
-                Button("Figma 沉淀", action: model.openFigmaResearchBoard).buttonStyle(SecondaryActionStyle())
+                Button("开始视觉沉淀", action: model.requestFigmaSynthesis).buttonStyle(SecondaryActionStyle())
                 Button("结束记录", action: model.openResearchDocument).buttonStyle(ReviewPrimaryActionStyle())
             }
         }.padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 16)
