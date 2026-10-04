@@ -654,10 +654,6 @@ async function runOneShot(captureArgs) {
   try {
     const page = context.pages()[0] || await context.newPage();
     if (captureArgs.launchOnly) {
-      // 保留一个空白标签作为浏览器会话锚点。部分竞品页会关闭或替换首个标签，
-      // 若它是唯一标签，Chromium 会一并退出整个窗口。
-      const keeperPage = await context.newPage();
-      await keeperPage.goto('about:blank');
       await page.goto(captureArgs.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(captureArgs.waitMs);
@@ -673,9 +669,7 @@ async function runOneShot(captureArgs) {
       await page.bringToFront();
       await activateBrowser(browserPath);
       console.log('采集浏览器已打开。请在网页右下角使用「截图入库」；完成后关闭此浏览器窗口即可。');
-      // 竞品网站会重定向、替换或主动关闭当前标签；这不代表用户结束采集。
-      // 仅在整个浏览器上下文关闭时才回收进程，避免网页一闪即退出。
-      // 明确禁用 Playwright 默认等待超时；采集会话应持续到用户关闭浏览器。
+      // 明确禁用 Playwright 默认等待超时；采集会话持续到用户关闭浏览器。
       await context.waitForEvent('close', { timeout: 0 }).catch(() => {});
       return;
     }
