@@ -84,6 +84,48 @@ function timestampLabel() {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
+async function getVisionAPIKey() {
+  return new Promise((resolve, reject) => execFile(
+    'security',
+    ['find-generic-password', '-a', 'ai-competitor-research-capture', '-s', 'AICompetitorResearchOpenAIKey', '-w'],
+    (error, stdout) => error ? reject(new Error('未配置视觉分析密钥。')) : resolve(String(stdout).trim()),
+  ));
+}
+
+async function analyzeScreenshotWithVision(library, capture) {
+  const key = await getVisionAPIKey();
+  const image = await fs.readFile(path.join(library.directory, capture.screenshot));
+  const instruction = [
+    '你是一名资深产品与 UX 研究员。仅根据截图中可直接看见的信息，用中文输出 JSON。',
+    '不要杜撰不可见的交互、性能或业务规则；不确定的内容写入 toVerify。',
+    `当前页面名称：${capture.name}；模块：${capture.module || '未填写'}；研究任务：${capture.userTask || '未填写'}。`,
+    'observation 只写可见事实；analysis 是基于事实的初步产品判断；uxState 只能使用：常规、加载中、成功、失败、缺省、无权限、禁用。',
+  ].join('\n');
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4.1-mini', store: false,
+      input: [{ role: 'user', content: [
+        { type: 'input_text', text: instruction },
+        { type: 'input_image', image_url: `data:image/png;base64,${image.toString('base64')}`, detail: 'high' },
+      ] }],
+      text: { format: { type: 'json_schema', name: 'research_capture_analysis', strict: true, schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          observation: { type: 'string' }, analysis: { type: 'string' }, toVerify: { type: 'string' },
+          uxState: { type: 'string', enum: ['常规', '加载中', '成功', '失败', '缺省', '无权限', '禁用'] },
+          trigger: { type: 'string' }, feedback: { type: 'string' }, recovery: { type: 'string' }, accessibility: { type: 'string' },
+        }, required: ['observation', 'analysis', 'toVerify', 'uxState', 'trigger', 'feedback', 'recovery', 'accessibility'],
+      } } },
+    }),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result?.error?.message || '视觉分析请求失败。');
+  try { return JSON.parse(result.output_text); }
+  catch { throw new Error('视觉分析返回格式异常，请重试。'); }
+}
+
 function createEmptyIndex(session, displayName) {
   return {
     type: 'competitor-research-capture-library',
@@ -208,7 +250,7 @@ function panelScript(defaults = {}) {
       '<div class="field"><label for="module">模块</label><input id="module" maxlength="80" placeholder="例如：分镜编辑" /></div>' +
       '<div class="field"><label for="note">页面备注 / 路径</label><textarea id="note" maxlength="300" placeholder="记录当前路径、功能名称或上下文"></textarea></div>' +
       '<button class="primary" id="capture" type="button">截图并预览</button><p class="hint">截图时采集面板会自动隐藏，不会出现在图片中。</p><p class="status" id="status" aria-live="polite"></p>' +
-      '<div class="preview" id="preview"><strong>截图已保存</strong><p class="hint">先生成草稿，再按实际页面核对；需要时再展开完整研究与 UX 字段。</p><div class="stage" id="stage"><img id="image" alt="刚采集的页面截图预览" /><div id="pins"></div></div><div class="annotation-list" id="annotations"></div><button class="primary" id="draft" type="button">生成分析草稿</button><p class="hint">当前为本地结构化草稿；连接视觉模型后可升级为直接看图分析。</p><details class="advanced" id="advanced"><summary>补充研究与 UX 细节（可选）</summary><div class="field"><label for="observation">观察事实</label><textarea id="observation" maxlength="500" placeholder="只描述画面中可直接确认的事实"></textarea></div><div class="field"><label for="analysis">分析解读</label><textarea id="analysis" maxlength="500" placeholder="基于事实的产品判断；避免把猜测写成事实"></textarea></div><div class="field"><label for="verify">待验证</label><textarea id="verify" maxlength="300" placeholder="下一步需进入何处、验证什么"></textarea></div><div class="field"><label for="ux-state">UX 状态</label><select id="ux-state" aria-label="UX 状态"><option>常规</option><option>加载中</option><option>成功</option><option>失败</option><option>缺省</option><option>无权限</option><option>禁用</option></select></div><div class="field"><label for="ux-trigger">触发动作与用户期待</label><textarea id="ux-trigger" maxlength="240" placeholder="例如：点击生成，期待看到进度和可取消入口"></textarea></div><div class="field"><label for="ux-feedback">可见反馈 / 状态文案</label><textarea id="ux-feedback" maxlength="500" placeholder="原样记录文案、图标、进度、骨架或错误提示"></textarea></div><div class="field"><label for="ux-recovery">恢复路径 / 下一步</label><textarea id="ux-recovery" maxlength="300" placeholder="例如：重试、返回上一步、联系客服或创建第一条内容"></textarea></div><div class="field"><label for="ux-accessibility">可访问性线索（可选）</label><textarea id="ux-accessibility" maxlength="300" placeholder="例如：状态是否只靠颜色；按钮文字是否说明操作"></textarea></div><div class="actions"><button class="secondary" id="inspect" type="button">读取 UI 数值</button><button class="save" id="save" type="button">保存补充</button></div><p class="hint" id="inspect-hint">点击“读取 UI 数值”后，再点网页中的任一元素；不会触发该网页操作。</p><div class="spec" id="spec" hidden></div></details><div class="actions"><button class="secondary" id="open-library" type="button">打开素材库</button><button class="save" id="save-main" type="button">保存</button></div><button class="primary" id="sync" type="button">确认并同步到飞书</button></div>' +
+      '<div class="preview" id="preview"><strong>截图已保存</strong><p class="hint">AI 会先读取截图生成草稿；请按实际页面核对后再同步。</p><div class="stage" id="stage"><img id="image" alt="刚采集的页面截图预览" /><div id="pins"></div></div><div class="annotation-list" id="annotations"></div><button class="primary" id="draft" type="button">AI 分析此截图</button><p class="hint">分析结果不会自动同步；确认无误后由你保存。</p><details class="advanced" id="advanced"><summary>补充研究与 UX 细节（可选）</summary><div class="field"><label for="observation">观察事实</label><textarea id="observation" maxlength="500" placeholder="只描述画面中可直接确认的事实"></textarea></div><div class="field"><label for="analysis">分析解读</label><textarea id="analysis" maxlength="500" placeholder="基于事实的产品判断；避免把猜测写成事实"></textarea></div><div class="field"><label for="verify">待验证</label><textarea id="verify" maxlength="300" placeholder="下一步需进入何处、验证什么"></textarea></div><div class="field"><label for="ux-state">UX 状态</label><select id="ux-state" aria-label="UX 状态"><option>常规</option><option>加载中</option><option>成功</option><option>失败</option><option>缺省</option><option>无权限</option><option>禁用</option></select></div><div class="field"><label for="ux-trigger">触发动作与用户期待</label><textarea id="ux-trigger" maxlength="240" placeholder="例如：点击生成，期待看到进度和可取消入口"></textarea></div><div class="field"><label for="ux-feedback">可见反馈 / 状态文案</label><textarea id="ux-feedback" maxlength="500" placeholder="原样记录文案、图标、进度、骨架或错误提示"></textarea></div><div class="field"><label for="ux-recovery">恢复路径 / 下一步</label><textarea id="ux-recovery" maxlength="300" placeholder="例如：重试、返回上一步、联系客服或创建第一条内容"></textarea></div><div class="field"><label for="ux-accessibility">可访问性线索（可选）</label><textarea id="ux-accessibility" maxlength="300" placeholder="例如：状态是否只靠颜色；按钮文字是否说明操作"></textarea></div><div class="actions"><button class="secondary" id="inspect" type="button">读取 UI 数值</button><button class="save" id="save" type="button">保存补充</button></div><p class="hint" id="inspect-hint">点击“读取 UI 数值”后，再点网页中的任一元素；不会触发该网页操作。</p><div class="spec" id="spec" hidden></div></details><div class="actions"><button class="secondary" id="open-library" type="button">打开素材库</button><button class="save" id="save-main" type="button">保存</button></div><button class="primary" id="sync" type="button">确认并同步到飞书</button></div>' +
       '</section>';
 
     const toast = document.createElement('div');
@@ -300,13 +342,16 @@ function panelScript(defaults = {}) {
       marks.push({ id: 'A' + (marks.length + 1), x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)), y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)), note: '' });
       renderMarks();
     });
-    draft.addEventListener('click', () => {
-      const page = cleanName(name.value) || document.title || '当前页面'; const goal = cleanName(task.value) || '本轮调研任务';
-      if (!observation.value.trim()) observation.value = '在 ' + page + ' 页面中，已于当前浏览器视口完成截图留存。页面备注：' + (cleanName(note.value) || '待补充') + '。';
-      if (!analysis.value.trim()) analysis.value = '该截图为“' + goal + '”提供了界面证据。请结合后续页面流程与同类竞品对照，确认该能力是否可编辑、可保存并在后续环节生效。';
-      if (!verify.value.trim()) verify.value = '继续进入与“' + page + '”关联的下一层页面，验证关键操作是否可完成、结果是否可回溯。';
-      advanced.open = true;
-      setStatus('已生成可编辑分析草稿，请校对后保存。'); showToast('分析草稿已生成，尚未同步。', 'success');
+    draft.addEventListener('click', async () => {
+      if (!current || !window.__codexResearchAIAnalyze) { setStatus('请先完成截图，再进行 AI 分析。'); return; }
+      draft.disabled = true; draft.textContent = 'AI 正在分析截图…'; setStatus('正在读取截图并生成研究草稿…');
+      try {
+        const result = await window.__codexResearchAIAnalyze({ session: current.session, captureId: current.id });
+        observation.value = result.observation || ''; analysis.value = result.analysis || ''; verify.value = result.toVerify || '';
+        uxState.value = result.uxState || '常规'; uxTrigger.value = result.trigger || ''; uxFeedback.value = result.feedback || ''; uxRecovery.value = result.recovery || ''; uxAccessibility.value = result.accessibility || '';
+        advanced.open = true; setStatus('AI 草稿已生成，请核对后保存。'); showToast('AI 分析完成，尚未同步。', 'success');
+      } catch (error) { const message = 'AI 分析失败：' + (error?.message || '未知错误'); setStatus(message); showToast(message, 'error'); }
+      finally { draft.disabled = false; draft.textContent = 'AI 分析此截图'; }
     });
     inspect.addEventListener('click', () => {
       if (!current) { setStatus('请先完成截图，再读取用于 Figma 标注的 UI 数值。'); return; }
@@ -488,6 +533,13 @@ export async function attachResearchCapturePanel(context, { researchDir, default
     const library = await getLibrary(payload.session);
     await openPath(library.directory);
     return { directory: library.directory };
+  });
+
+  await context.exposeBinding('__codexResearchAIAnalyze', async (_source, payload = {}) => {
+    const library = await getLibrary(payload.session);
+    const capture = library.index.captures.find((item) => item.id === payload.captureId);
+    if (!capture) throw new Error('没有找到要分析的截图。');
+    return analyzeScreenshotWithVision(library, capture);
   });
 
   await context.exposeBinding('__codexResearchSync', async (_source, payload = {}) => {
