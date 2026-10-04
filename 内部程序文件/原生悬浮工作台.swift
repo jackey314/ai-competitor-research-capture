@@ -205,11 +205,11 @@ struct FloatingCard: View {
         .onReceive(timer) { _ in model.refreshStatus() }
         .onAppear { model.restoreCurrentTask() }
         .sheet(item: $model.selectedCapture) { capture in CaptureDetailSheet(capture: capture) }
-        .alert("开始视觉沉淀？", isPresented: $model.showFigmaConfirmation) {
+        .alert("生成视觉分析总结？", isPresented: $model.showFigmaConfirmation) {
             Button("取消", role: .cancel) {}
-            Button("打开 Figma 沉淀板") { model.openFigmaResearchBoard() }
+            Button("进入 Figma 视觉板") { model.openFigmaResearchBoard() }
         } message: {
-            Text("将基于当前已收录的 \(model.captures.count) 张截图，汇总视觉样式、页面状态与 AI 分析结果。请确认本轮截图已基本完整后再开始。")
+            Text("将基于当前已收录的 \(model.captures.count) 张截图及 AI 分析，归纳信息结构、视觉语言、组件与状态模式、跨页面对照和可复用设计启示。请确认本轮截图已基本完整后再开始。")
         }
     }
 
@@ -382,7 +382,7 @@ struct FloatingCard: View {
             Text(model.statusText).font(.system(size: 10)).foregroundStyle(.white.opacity(0.60)).lineLimit(1)
             HStack(spacing: 8) {
                 Button("飞书资产", action: model.openMaterialLibrary).buttonStyle(SecondaryActionStyle())
-                Button("开始视觉沉淀", action: model.requestFigmaSynthesis).buttonStyle(SecondaryActionStyle())
+                Button("生成视觉总结", action: model.requestFigmaSynthesis).buttonStyle(SecondaryActionStyle())
                 Button("结束记录", action: model.openResearchDocument).buttonStyle(ReviewPrimaryActionStyle())
             }
         }.padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 16)
