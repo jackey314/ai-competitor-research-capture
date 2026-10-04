@@ -191,7 +191,7 @@ struct FloatingCard: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
-                operationSurface
+                operationSurface(availableWidth: geometry.size.width)
                 mirrorControls(compact: geometry.size.width < 420)
                     .padding(.leading, geometry.size.width < 420 ? 14 : 26)
                     .padding(.top, geometry.size.height < 580 ? 14 : 24)
@@ -205,13 +205,13 @@ struct FloatingCard: View {
         .sheet(item: $model.selectedCapture) { capture in CaptureDetailSheet(capture: capture) }
     }
 
-    private var operationSurface: some View {
+    private func operationSurface(availableWidth: CGFloat) -> some View {
         ZStack {
             Image(nsImage: backgroundImage()).resizable().scaledToFill().clipped()
             Color(red: 0.01, green: 0.15, blue: 0.42).opacity(0.22)
             VStack(spacing: 0) {
-                navigation
-                if model.stage == .landing { landing } else { journey }
+                navigation(compact: availableWidth < 430)
+                if model.stage == .landing { landing(availableWidth: availableWidth) } else { journey(availableWidth: availableWidth) }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: interfaceCorner, style: .continuous))
@@ -229,24 +229,25 @@ struct FloatingCard: View {
         }
     }
 
-    private var navigation: some View {
-        HStack(spacing: 18) {
+    private func navigation(compact: Bool) -> some View {
+        HStack(spacing: compact ? 10 : 18) {
             Spacer()
             Button("最近任务", action: model.openRecentTasks).buttonStyle(TopLinkStyle())
             Button("素材库", action: model.openMaterialLibrary).buttonStyle(TopLinkStyle())
         }
-        .padding(.top, 18)
-        .padding(.trailing, 26)
+        .padding(.top, compact ? 13 : 18)
+        .padding(.trailing, compact ? 14 : 26)
     }
 
-    private var landing: some View {
-        VStack(spacing: 0) {
+    private func landing(availableWidth: CGFloat) -> some View {
+        let cardWidth = max(300, min(430, availableWidth - 40))
+        return VStack(spacing: 0) {
             Spacer().frame(height: 42)
-            heroTitle
+            heroTitle(compact: availableWidth < 430)
             Spacer().frame(height: 42)
             glassPanel {
                 VStack(spacing: 0) {
-                    progressBar
+                    progressBar(compact: availableWidth < 430)
                     VStack(alignment: .leading, spacing: 10) {
                         Text("竞品名称").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.92))
                         TextField("例如：小云雀", text: $model.competitor).textFieldStyle(HeroInputStyle()).accessibilityLabel("竞品名称")
@@ -255,35 +256,37 @@ struct FloatingCard: View {
                     Spacer()
                     Button(action: model.continueToDetails) { Text("开始采集").frame(width: 184) }.buttonStyle(HeroButtonStyle()).padding(.bottom, 42)
                 }
-            }.frame(maxWidth: 430, minHeight: 430, maxHeight: 470).padding(.horizontal, 16)
+            }.frame(width: cardWidth).frame(minHeight: 430, maxHeight: 470)
             Spacer(minLength: 22)
         }
     }
 
-    private var journey: some View {
-        VStack(spacing: 0) {
-            Spacer().frame(height: 26)
-            heroTitle
-            Spacer().frame(height: 30)
+    private func journey(availableWidth: CGFloat) -> some View {
+        let compact = availableWidth < 430
+        let cardWidth = max(300, min(430, availableWidth - 40))
+        return VStack(spacing: 0) {
+            Spacer().frame(height: compact ? 18 : 26)
+            heroTitle(compact: compact)
+            Spacer().frame(height: compact ? 20 : 30)
             glassPanel {
                 VStack(spacing: 0) {
-                    progressBar
+                    progressBar(compact: compact)
                     if model.stage == .recents { recentTasksState }
                     else if model.stage == .details { detailsForm }
                     else if model.stage == .capturing { capturingState }
                     else if model.stage == .review { reviewState }
                     else { completedState }
                 }
-            }.frame(maxWidth: 430, minHeight: 455, maxHeight: 505).padding(.horizontal, 16)
+            }.frame(width: cardWidth).frame(minHeight: 455, maxHeight: 505)
             Spacer(minLength: 18)
         }
     }
 
-    private var heroTitle: some View {
+    private func heroTitle(compact: Bool) -> some View {
         VStack(spacing: 10) {
-            Text("开启竞品调研").font(.system(size: 30, weight: .bold, design: .rounded)).foregroundStyle(.white)
-            Text("先定义本轮想确认的问题；不同竞品的路径由你在浏览器中自由走查").font(.system(size: 13)).foregroundStyle(.white.opacity(0.86))
-        }.multilineTextAlignment(.center).padding(.horizontal, 24)
+            Text("开启竞品调研").font(.system(size: compact ? 24 : 30, weight: .bold, design: .rounded)).foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.72)
+            Text("先定义本轮想确认的问题；不同竞品的路径由你在浏览器中自由走查").font(.system(size: compact ? 11 : 13)).foregroundStyle(.white.opacity(0.86)).lineLimit(compact ? 2 : 1)
+        }.multilineTextAlignment(.center).padding(.horizontal, compact ? 16 : 24)
     }
 
     private func glassPanel<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -296,20 +299,20 @@ struct FloatingCard: View {
         }
     }
 
-    private var progressBar: some View {
+    private func progressBar(compact: Bool) -> some View {
         HStack(spacing: 9) {
-            wideStep(1, "竞品目标", active: model.step == 1, done: model.step > 1)
+            wideStep(1, compact ? "目标" : "竞品目标", active: model.step == 1, done: model.step > 1, compact: compact)
             progressLine
-            wideStep(2, "网页收录", active: model.step == 2, done: model.step > 2)
+            wideStep(2, compact ? "收录" : "网页收录", active: model.step == 2, done: model.step > 2, compact: compact)
             progressLine
-            wideStep(3, "截图沉淀", active: model.step == 3, done: false)
+            wideStep(3, compact ? "沉淀" : "截图沉淀", active: model.step == 3, done: false, compact: compact)
         }
-        .padding(.horizontal, 16).padding(.vertical, 15).background(.white.opacity(0.19), in: Capsule())
+        .padding(.horizontal, compact ? 10 : 16).padding(.vertical, compact ? 12 : 15).background(.white.opacity(0.19), in: Capsule())
     }
 
-    private var progressLine: some View { Rectangle().fill(.white.opacity(0.60)).frame(width: 20, height: 1).overlay { Rectangle().stroke(style: StrokeStyle(lineWidth: 1, dash: [2, 3])).foregroundStyle(.white.opacity(0.55)) } }
-    private func wideStep(_ index: Int, _ title: String, active: Bool, done: Bool) -> some View {
-        Button(action: { model.goToStep(index) }) { HStack(spacing: 5) { Text(done ? "✓" : String(format: "%02d", index)).font(.system(size: 12, weight: .bold, design: .rounded)); Text(title).font(.system(size: 12, weight: active ? .semibold : .regular)) }.foregroundStyle(active || done ? .white : .white.opacity(0.56)).fixedSize() }
+    private var progressLine: some View { Rectangle().fill(.white.opacity(0.60)).frame(width: 14, height: 1).overlay { Rectangle().stroke(style: StrokeStyle(lineWidth: 1, dash: [2, 3])).foregroundStyle(.white.opacity(0.55)) } }
+    private func wideStep(_ index: Int, _ title: String, active: Bool, done: Bool, compact: Bool) -> some View {
+        Button(action: { model.goToStep(index) }) { HStack(spacing: compact ? 3 : 5) { Text(done ? "✓" : String(format: "%02d", index)).font(.system(size: compact ? 10 : 12, weight: .bold, design: .rounded)); Text(title).font(.system(size: compact ? 10 : 12, weight: active ? .semibold : .regular)) }.foregroundStyle(active || done ? .white : .white.opacity(0.56)).fixedSize() }
             .buttonStyle(.plain).contentShape(Rectangle()).help(index == 1 ? "查看调研信息" : index == 2 ? "查看网页收录说明" : "查看已截图素材")
     }
 
