@@ -224,7 +224,9 @@ function panelScript(defaults = {}) {
     else document.addEventListener('DOMContentLoaded', mount, { once: true });
     // SPA 在首屏加载后可能替换 body/根容器；检测到面板被移除时立刻重新挂载。
     const keepMounted = () => mount();
-    new MutationObserver(keepMounted).observe(document.documentElement, { childList: true, subtree: true });
+    const observeMount = () => { if (document.documentElement) new MutationObserver(keepMounted).observe(document.documentElement, { childList: true, subtree: true }); };
+    if (document.documentElement) observeMount();
+    else document.addEventListener('DOMContentLoaded', observeMount, { once: true });
     setInterval(keepMounted, 800);
     const $ = (id) => root.getElementById(id);
     const trigger = $('trigger'); const panel = $('panel'); const close = $('close');
@@ -269,7 +271,7 @@ function panelScript(defaults = {}) {
     const renderSpec = () => {
       if (!selectedStyle) { spec.hidden = true; spec.textContent = ''; return; }
       const { typography, spacing, surface, rect } = selectedStyle;
-      spec.textContent = '已读取：' + selectedStyle.tagName + '  ' + selectedStyle.selector + '\n尺寸 ' + rect.width + ' × ' + rect.height + ' · 字号 ' + typography.fontSize + ' · 行高 ' + typography.lineHeight + '\n内边距 ' + spacing.padding + ' · 圆角 ' + surface.borderRadius + ' · 间距 ' + spacing.gap;
+      spec.textContent = '已读取：' + selectedStyle.tagName + '  ' + selectedStyle.selector + '\\n尺寸 ' + rect.width + ' × ' + rect.height + ' · 字号 ' + typography.fontSize + ' · 行高 ' + typography.lineHeight + '\\n内边距 ' + spacing.padding + ' · 圆角 ' + surface.borderRadius + ' · 间距 ' + spacing.gap;
       spec.hidden = false;
     };
     const clearInspect = () => { inspectMode = false; highlight.dataset.visible = 'false'; inspect.textContent = '读取 UI 数值'; inspectHint.textContent = '点击“读取 UI 数值”后，再点网页中的任一元素；不会触发该网页操作。'; };
