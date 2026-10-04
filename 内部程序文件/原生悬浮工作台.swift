@@ -12,7 +12,7 @@ struct TaskRequest: Codable { let competitor: String; let url: String; let userT
 struct CaptureStatus: Codable {
     let activeTask: ActiveTask?; let latestCapture: LatestCapture?
     struct ActiveTask: Codable { let competitor: String; let running: Bool?; let status: String?; let launchError: String? }
-    struct LatestCapture: Codable { let session: String; let name: String; let syncStatus: String }
+    struct LatestCapture: Codable { let id: String; let session: String; let name: String; let syncStatus: String }
 }
 struct CapturePreview: Codable, Identifiable { let id: String; let name: String; let module: String; let syncStatus: String; let imageUrl: String; let observation: String?; let analysis: String?; let toVerify: String?; let uxState: String?; let finalUrl: String? }
 struct RecentTask: Codable, Identifiable {
@@ -37,6 +37,7 @@ final class WorkbenchModel: ObservableObject {
     @Published var activeSession = ""
     @Published var recentTasks: [RecentTask] = []
     @Published var selectedCapture: CapturePreview?
+    private var handledSyncedCaptureID = ""
     var closeWindow: (() -> Void)?
     var minimizeWindow: (() -> Void)?
     var zoomWindow: (() -> Void)?
@@ -114,6 +115,17 @@ final class WorkbenchModel: ObservableObject {
                     statusText = "已收录 \(captures.count) 张截图，可删除本地素材或继续采集。"
                 }
             }
+            if let latest = status.latestCapture, latest.session == activeSession, latest.syncStatus == "已同步飞书", handledSyncedCaptureID != latest.id {
+                handledSyncedCaptureID = latest.id
+                statusText = "截图已成功同步到飞书，即将继续采集下一张。"
+                withAnimation(.spring(response: 0.36, dampingFraction: 0.88)) { stage = .complete }
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(2.2))
+                    guard let self, self.stage == .complete else { return }
+                    self.statusText = "已同步上一张截图，可继续在浏览器中采集下一张。"
+                    withAnimation(.spring(response: 0.36, dampingFraction: 0.88)) { self.stage = .capturing }
+                }
+            }
         }
     }
 
@@ -167,7 +179,7 @@ final class WorkbenchModel: ObservableObject {
     func openMaterialLibrary() { if let url = URL(string: materialLibraryURL) { NSWorkspace.shared.open(url) } }
     func openResearchDocument() { if let url = URL(string: researchDocumentURL) { NSWorkspace.shared.open(url) } }
     func openFigmaResearchBoard() { if let url = URL(string: figmaResearchURL) { NSWorkspace.shared.open(url) } }
-    func reset() { competitor = ""; pageURL = ""; userTask = ""; module = ""; errorText = ""; statusText = ""; captures = []; activeSession = ""; withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { stage = .details } }
+    func reset() { competitor = ""; pageURL = ""; userTask = ""; module = ""; errorText = ""; statusText = ""; captures = []; activeSession = ""; handledSyncedCaptureID = ""; withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { stage = .details } }
 }
 
 struct FloatingCard: View {

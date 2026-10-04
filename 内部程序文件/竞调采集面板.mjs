@@ -389,7 +389,7 @@ function panelScript(defaults = {}) {
       sync.disabled = true; setStatus('正在上传截图并同步到飞书多维表格…');
       try {
         const result = await window.__codexResearchSync({ session: current.session, captureId: current.id });
-        current = result.capture; const message = result.updated ? '飞书记录已更新。编号：' + (result.recordId || current.id) + '。' : '已同步到飞书。记录编号：' + (result.recordId || current.id) + '。'; setStatus(message); showToast(message, 'success');
+        current = result.capture; const message = result.updated ? '飞书记录已更新。编号：' + (result.recordId || current.id) + '。' : '已成功同步到飞书。记录编号：' + (result.recordId || current.id) + '。'; sync.textContent = '已同步 ✓'; setStatus(message + ' 现在可以继续采集下一张。'); showToast(message, 'success');
       } catch (error) { const message = '飞书同步失败：' + (error?.message || '未知错误') + '。本地素材仍已保存。'; setStatus(message); showToast(message, 'error'); }
       finally { sync.disabled = false; }
     });
