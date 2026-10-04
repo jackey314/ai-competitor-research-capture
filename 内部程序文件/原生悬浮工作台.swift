@@ -235,7 +235,8 @@ struct FloatingCard: View {
             Button("最近任务", action: model.openRecentTasks).buttonStyle(TopLinkStyle())
             Button("素材库", action: model.openMaterialLibrary).buttonStyle(TopLinkStyle())
         }
-        .padding(.top, compact ? 13 : 18)
+        // 固定顶部安全外边距，避开左上角窗口控制区，缩放时也不贴边或被裁切。
+        .padding(.top, compact ? 54 : 58)
         .padding(.trailing, compact ? 14 : 26)
     }
 
