@@ -476,12 +476,10 @@ export async function attachResearchCapturePanel(context, { researchDir, default
     }
     const imageHash = createHash('sha256').update(image).digest('hex');
     const finalUrl = page.url();
-    const duplicate = library.index.captures.find((item) =>
-      item.imageHash === imageHash || (item.finalUrl === finalUrl && item.name === name && item.module === module)
-    );
+    // 同一页面可存在加载、展开、成功、失败等多个状态；仅画面字节完全一致时才拦截。
+    const duplicate = library.index.captures.find((item) => item.imageHash === imageHash);
     if (duplicate) {
-      const reason = duplicate.imageHash === imageHash ? '页面画面完全相同' : '页面、名称和模块信息相同';
-      return { duplicate: true, message: `发现重复素材 ${duplicate.id}（${reason}），未重复入库。可修改页面名称或模块后再截图。` };
+      return { duplicate: true, message: `发现重复素材 ${duplicate.id}（页面画面完全相同），未重复入库。` };
     }
     const id = String(library.index.captures.length + 1).padStart(3, '0');
     const filename = `${id}-${safeName(name)}-${viewportLabel}.png`;
