@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import { attachResearchCapturePanel } from './竞调采集面板.mjs';
+import { attachResearchCapturePanel, buildResearchCapturePanelScript } from './竞调采集面板.mjs';
 
 const BUNDLED_NODE_MODULES =
   process.env.CODEX_NODE_MODULES ||
@@ -661,6 +661,15 @@ async function runOneShot(captureArgs) {
       await page.goto(captureArgs.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(captureArgs.waitMs);
+      // 个别持久化 Chromium 会话不会在首个跳转执行 addInitScript；页面就绪后补一次显式注入。
+      if (captureArgs.researchPanel) {
+        await page.evaluate(buildResearchCapturePanelScript({
+          session: captureArgs.researchSession,
+          taskId: captureArgs.researchTaskId,
+          userTask: captureArgs.researchUserTask,
+          module: captureArgs.researchModule,
+        })).catch((error) => console.warn(`截图入库面板注入失败：${error.message}`));
+      }
       await page.bringToFront();
       await activateBrowser(browserPath);
       console.log('采集浏览器已打开。请在网页右下角使用「截图入库」；完成后关闭此浏览器窗口即可。');

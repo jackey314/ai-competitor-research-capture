@@ -348,6 +348,10 @@ function panelScript(defaults = {}) {
   })();`;
 }
 
+export function buildResearchCapturePanelScript(defaults = {}) {
+  return panelScript(defaults);
+}
+
 export async function attachResearchCapturePanel(context, { researchDir, defaultSession = '', taskId = '', userTask = '', defaultModule = '' }) {
   const rootDir = path.resolve(researchDir);
   const libraries = new Map();
