@@ -276,6 +276,11 @@ function panelScript(defaults = {}) {
     else document.addEventListener('DOMContentLoaded', observeMount, { once: true });
     setInterval(keepMounted, 800);
     const $ = (id) => root.getElementById(id);
+    // 采集面板位于竞品网页之上。阻止事件冒泡到宿主页面，避免其“点击外部关闭”逻辑
+    // 把网页中的弹窗、下拉菜单或当前编辑状态一并关闭。
+    ['pointerdown', 'mousedown', 'mouseup', 'click', 'touchstart'].forEach((type) => {
+      root.addEventListener(type, (event) => event.stopPropagation());
+    });
     const trigger = $('trigger'); const panel = $('panel'); const close = $('close');
     const session = $('session'); const task = $('task'); const name = $('name'); const module = $('module'); const note = $('note');
     const capture = $('capture'); const status = $('status'); const preview = $('preview'); const image = $('image');
