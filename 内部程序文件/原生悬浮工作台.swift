@@ -6,6 +6,7 @@ import SwiftUI
 let toolDirectory = "/Users/afly/Documents/Codex/2026-06-04/figma-figma/outputs/figma-qa-screenshot-tool（截图工具）"
 let materialLibraryURL = "https://my.feishu.cn/wiki/P9ZXwmoFYiCTzpk6eQGcsj4Hnsg?table=tbluNJHoiHttVvse&view=vewfgRMcdy"
 let researchDocumentURL = "https://my.feishu.cn/wiki/ExEcwGnW0iar0TkXJNOcQX0Xngf?larkTabName=space"
+let figmaResearchURL = "https://www.figma.com/design/3JZakdtXSbXFgRdUfZ8ypV/%E7%AB%9E%E5%93%81%E8%B0%83%E7%A0%94%E5%B7%A5%E5%85%B7%E6%B2%89%E6%B7%80?node-id=4-2"
 
 struct TaskRequest: Codable { let competitor: String; let url: String; let userTask: String; let module: String }
 struct CaptureStatus: Codable {
@@ -13,7 +14,7 @@ struct CaptureStatus: Codable {
     struct ActiveTask: Codable { let competitor: String; let running: Bool?; let status: String?; let launchError: String? }
     struct LatestCapture: Codable { let session: String; let name: String; let syncStatus: String }
 }
-struct CapturePreview: Codable, Identifiable { let id: String; let name: String; let module: String; let syncStatus: String; let imageUrl: String }
+struct CapturePreview: Codable, Identifiable { let id: String; let name: String; let module: String; let syncStatus: String; let imageUrl: String; let observation: String?; let analysis: String?; let toVerify: String?; let uxState: String?; let finalUrl: String? }
 struct RecentTask: Codable, Identifiable {
     let taskId: String; let competitor: String; let startUrl: String; let userTask: String; let module: String; let createdAt: String
     var id: String { taskId }
@@ -35,6 +36,7 @@ final class WorkbenchModel: ObservableObject {
     @Published var isPinned = true
     @Published var activeSession = ""
     @Published var recentTasks: [RecentTask] = []
+    @Published var selectedCapture: CapturePreview?
     var closeWindow: (() -> Void)?
     var minimizeWindow: (() -> Void)?
     var zoomWindow: (() -> Void)?
@@ -164,6 +166,7 @@ final class WorkbenchModel: ObservableObject {
     func returnToWorkbench() { stage = activeSession.isEmpty ? .details : .capturing }
     func openMaterialLibrary() { if let url = URL(string: materialLibraryURL) { NSWorkspace.shared.open(url) } }
     func openResearchDocument() { if let url = URL(string: researchDocumentURL) { NSWorkspace.shared.open(url) } }
+    func openFigmaResearchBoard() { if let url = URL(string: figmaResearchURL) { NSWorkspace.shared.open(url) } }
     func reset() { competitor = ""; pageURL = ""; userTask = ""; module = ""; errorText = ""; statusText = ""; captures = []; activeSession = ""; withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { stage = .details } }
 }
 
@@ -187,6 +190,7 @@ struct FloatingCard: View {
         .clipShape(RoundedRectangle(cornerRadius: interfaceCorner, style: .continuous))
         .onReceive(timer) { _ in model.refreshStatus() }
         .onAppear { model.restoreCurrentTask() }
+        .sheet(item: $model.selectedCapture) { capture in CaptureDetailSheet(capture: capture) }
     }
 
     private var operationSurface: some View {
@@ -346,12 +350,13 @@ struct FloatingCard: View {
             HStack { VStack(alignment: .leading, spacing: 2) { Text("正在截图沉淀").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white); Text("已收录 \(model.captures.count) 张 · 可继续在浏览器中采集").font(.system(size: 10)).foregroundStyle(.white.opacity(0.64)) }; Spacer(); Text("步骤 03").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.72)) }
             ScrollView(showsIndicators: false) {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 10) {
-                    ForEach(model.captures) { capture in CaptureTile(capture: capture, onDelete: { model.deleteCapture(capture) }) }
+                    ForEach(model.captures) { capture in CaptureTile(capture: capture, onOpen: { model.selectedCapture = capture }, onDelete: { model.deleteCapture(capture) }) }
                 }
             }
             Text(model.statusText).font(.system(size: 10)).foregroundStyle(.white.opacity(0.60)).lineLimit(1)
             HStack(spacing: 8) {
-                Button("开启下一个任务", action: model.reset).buttonStyle(SecondaryActionStyle())
+                Button("飞书资产", action: model.openMaterialLibrary).buttonStyle(SecondaryActionStyle())
+                Button("Figma 沉淀", action: model.openFigmaResearchBoard).buttonStyle(SecondaryActionStyle())
                 Button("结束记录", action: model.openResearchDocument).buttonStyle(HeroButtonStyle())
             }
         }.padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 16)
@@ -396,11 +401,12 @@ private struct MirrorControl: View {
 }
 private struct CaptureTile: View {
     let capture: CapturePreview
+    let onOpen: () -> Void
     let onDelete: () -> Void
     @State private var hovering = false
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            VStack(alignment: .leading, spacing: 5) {
+            Button(action: onOpen) { VStack(alignment: .leading, spacing: 5) {
                 AsyncImage(url: URL(string: "http://127.0.0.1:48923\(capture.imageUrl)")) { phase in
                     if let image = phase.image { image.resizable().scaledToFill() }
                     else { RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(0.14)).overlay(ProgressView().controlSize(.small)) }
@@ -408,13 +414,27 @@ private struct CaptureTile: View {
                 .frame(height: 72).clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 HStack(spacing: 4) { Text(capture.id).font(.system(size: 9, weight: .bold)); Text(capture.name).lineLimit(1) }.font(.system(size: 9)).foregroundStyle(.white.opacity(0.84))
                 Text(capture.syncStatus).font(.system(size: 8)).foregroundStyle(capture.syncStatus == "已同步" ? Color(red: 0.68, green: 0.92, blue: 0.76) : .white.opacity(0.55))
-            }
+            } }.buttonStyle(.plain).accessibilityLabel("查看截图 \(capture.id) \(capture.name) 的记录")
             Button(action: onDelete) { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(.white).frame(width: 19, height: 19).background(.black.opacity(0.56), in: Circle()) }
                 .buttonStyle(.plain).opacity(hovering ? 1 : 0.78)
         }
         .padding(5).background(.black.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onHover { hovering = $0 }
     }
+}
+
+private struct CaptureDetailSheet: View {
+    let capture: CapturePreview
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack { VStack(alignment: .leading, spacing: 3) { Text("\(capture.id)｜\(capture.name)").font(.system(size: 20, weight: .semibold)); Text(capture.module.isEmpty ? "未填写模块" : capture.module).font(.system(size: 12)).foregroundStyle(.secondary) }; Spacer(); Button("完成", action: { dismiss() }) }
+            AsyncImage(url: URL(string: "http://127.0.0.1:48923\(capture.imageUrl)")) { phase in if let image = phase.image { image.resizable().scaledToFit() } else { ProgressView().frame(maxWidth: .infinity, minHeight: 180) } }.clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Group { detail("同步状态", capture.syncStatus); detail("观察事实", capture.observation ?? "尚未分析"); detail("分析解读", capture.analysis ?? "尚未分析"); detail("待验证", capture.toVerify ?? "尚未填写"); detail("UX 状态", capture.uxState ?? "未记录") }.font(.system(size: 12))
+            if let url = URL(string: capture.finalUrl ?? "") { Link("打开截图来源页面", destination: url).font(.system(size: 12, weight: .semibold)) }
+        }.padding(22).frame(minWidth: 430, minHeight: 520)
+    }
+    private func detail(_ title: String, _ value: String) -> some View { VStack(alignment: .leading, spacing: 3) { Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary); Text(value).fixedSize(horizontal: false, vertical: true) } }
 }
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {

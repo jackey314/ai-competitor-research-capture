@@ -88,6 +88,8 @@ async function listCaptures(session = '') {
   return (library.index.captures || []).slice().reverse().map((capture) => ({
     id: capture.id, name: capture.name, module: capture.module || '',
     syncStatus: capture.feishu_sync?.status === 'synced' ? '已同步' : '待同步',
+    observation: capture.observation || '', analysis: capture.analysis || '', toVerify: capture.toVerify || '',
+    uxState: capture.uxEvidence?.state || '未记录', finalUrl: capture.finalUrl || '',
     imageUrl: `/api/capture-image?id=${encodeURIComponent(capture.id)}&session=${encodeURIComponent(library.session)}`,
   }));
 }
