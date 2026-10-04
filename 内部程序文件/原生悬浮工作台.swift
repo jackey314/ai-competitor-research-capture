@@ -355,8 +355,8 @@ struct FloatingCard: View {
             }
             Text(model.statusText).font(.system(size: 10)).foregroundStyle(.white.opacity(0.60)).lineLimit(1)
             HStack(spacing: 8) {
-                Button("飞书资产", action: model.openMaterialLibrary).buttonStyle(SecondaryActionStyle())
-                Button("Figma 沉淀", action: model.openFigmaResearchBoard).buttonStyle(SecondaryActionStyle())
+                Button("飞书资产", action: model.openMaterialLibrary).buttonStyle(ReviewSecondaryActionStyle())
+                Button("Figma 沉淀", action: model.openFigmaResearchBoard).buttonStyle(ReviewSecondaryActionStyle())
                 Button("结束记录", action: model.openResearchDocument).buttonStyle(HeroButtonStyle())
             }
         }.padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 16)
@@ -386,6 +386,7 @@ private struct HeroButtonBody: View {
 }
 struct TopLinkStyle: ButtonStyle { func makeBody(configuration: Configuration) -> some View { TopLinkBody(configuration: configuration) } }
 struct SecondaryActionStyle: ButtonStyle { func makeBody(configuration: Configuration) -> some View { configuration.label.font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.88)).padding(.vertical, 9).padding(.horizontal, 11).background(.white.opacity(configuration.isPressed ? 0.10 : 0.16), in: Capsule()).overlay(Capsule().stroke(.white.opacity(0.28), lineWidth: 1)) } }
+struct ReviewSecondaryActionStyle: ButtonStyle { func makeBody(configuration: Configuration) -> some View { configuration.label.font(.system(size: 15, weight: .bold)).foregroundStyle(.white.opacity(0.92)).padding(.vertical, 12).padding(.horizontal, 14).background(.white.opacity(configuration.isPressed ? 0.10 : 0.16), in: Capsule()).overlay(Capsule().stroke(.white.opacity(0.28), lineWidth: 1)) } }
 private struct TopLinkBody: View {
     let configuration: ButtonStyle.Configuration
     @State private var hovering = false
