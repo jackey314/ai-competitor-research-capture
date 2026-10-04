@@ -343,7 +343,16 @@ function panelScript(defaults = {}) {
         row.append(label, input, remove); annotations.appendChild(row);
       });
     };
-    trigger.addEventListener('click', () => panel.dataset.open === 'true' ? closePanel() : openPanel());
+    // 在页面自己的“点击外部关闭弹窗”逻辑之前截取当前状态。
+    // 这样风格选择器、下拉面板等不会因打开采集表单而消失。
+    window.addEventListener('pointerdown', (event) => {
+      if (!event.composedPath().includes(trigger)) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (panel.dataset.open !== 'true') captureCurrent();
+    }, true);
+    window.addEventListener('click', (event) => {
+      if (event.composedPath().includes(trigger)) { event.preventDefault(); event.stopImmediatePropagation(); }
+    }, true);
     close.addEventListener('click', closePanel);
     window.addEventListener('keydown', (event) => { if (event.key === 'Escape' && panel.dataset.open === 'true') closePanel(); });
     stage.addEventListener('click', (event) => {
@@ -368,17 +377,18 @@ function panelScript(defaults = {}) {
       if (inspectMode) { clearInspect(); return; }
       inspectMode = true; inspect.textContent = '取消读取'; inspectHint.textContent = '现在点选网页元素即可读取。该次点击不会触发网页的跳转、按钮或输入。'; setStatus('正在选择 UI 元素…');
     });
-    capture.addEventListener('click', async () => {
+    const captureCurrent = async () => {
       if (!window.__codexResearchCapture) { setStatus('当前浏览器会话未连接截图工具，请重新打开通用截图工具。'); return; }
       capture.disabled = true; setStatus('正在采集并写入素材库…');
       try {
         const result = await window.__codexResearchCapture({ session: session.value, taskId: taskDefaults.taskId, userTask: task.value, name: cleanName(name.value) || document.title || '未命名页面', module: module.value, note: note.value });
         if (result.duplicate) { setStatus(result.message); showToast(result.message, 'warning'); return; }
-        current = result.capture; marks = Array.isArray(current.annotations) ? current.annotations : []; selectedStyle = current.styleSnapshot || null; observation.value = current.observation || ''; analysis.value = current.analysis || ''; verify.value = current.toVerify || ''; uxState.value = current.uxEvidence?.state || '常规'; uxTrigger.value = current.uxEvidence?.trigger || ''; uxFeedback.value = current.uxEvidence?.feedback || ''; uxRecovery.value = current.uxEvidence?.recovery || ''; uxAccessibility.value = current.uxEvidence?.accessibility || ''; saveMain.textContent = '保存'; image.src = result.preview; preview.dataset.visible = 'true'; renderMarks(); renderSpec(); clearInspect();
+        current = result.capture; marks = Array.isArray(current.annotations) ? current.annotations : []; selectedStyle = current.styleSnapshot || null; observation.value = current.observation || ''; analysis.value = current.analysis || ''; verify.value = current.toVerify || ''; uxState.value = current.uxEvidence?.state || '常规'; uxTrigger.value = current.uxEvidence?.trigger || ''; uxFeedback.value = current.uxEvidence?.feedback || ''; uxRecovery.value = current.uxEvidence?.recovery || ''; uxAccessibility.value = current.uxEvidence?.accessibility || ''; saveMain.textContent = '保存'; image.src = result.preview; preview.dataset.visible = 'true'; panel.dataset.open = 'true'; trigger.setAttribute('aria-expanded', 'true'); renderMarks(); renderSpec(); clearInspect();
         setStatus('已入库 ' + current.id + ' · ' + current.filename + '。可继续修改名称或添加标注。'); showToast('截图 ' + current.id + ' 已成功入库。', 'success');
       } catch (error) { const message = '截图失败：' + (error?.message || '未知错误'); setStatus(message); showToast(message, 'error'); }
       finally { capture.disabled = false; }
-    });
+    };
+    capture.addEventListener('click', captureCurrent);
     const saveCurrent = async () => {
       if (!current || !window.__codexResearchUpdate) return false;
       save.disabled = true; saveMain.disabled = true; setStatus('正在保存信息与标注…');
