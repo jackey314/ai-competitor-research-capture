@@ -72,8 +72,35 @@ export async function readFeishuSyncConfig(researchDir) {
   return { ...config, configPath };
 }
 
+function tableFields() {
+  return [
+    { field_name: '编号', type: 1 }, { field_name: '模块/路径', type: 1 }, { field_name: '用户任务', type: 1 },
+    { field_name: '截图', type: 17 }, { field_name: '观察事实', type: 1 }, { field_name: '分析解读', type: 1 },
+    { field_name: '证据等级', type: 1 }, { field_name: '待验证', type: 1 },
+  ];
+}
+
+async function resolveCompetitorTable(config, capture) {
+  const competitor = String(capture.session || '未命名竞品').trim();
+  const tables = { ...(config.tables || {}) };
+  if (!tables['小云雀'] && config.tableId) tables['小云雀'] = config.tableId;
+  if (tables[competitor]) return { tableId: tables[competitor], config: { ...config, tables } };
+  const created = await feishuFetch(`/open-apis/bitable/v1/apps/${config.appToken}/tables`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ table: { name: competitor.slice(0, 50), fields: tableFields() } }),
+  });
+  const tableId = created.table_id || created.table?.table_id;
+  if (!tableId) throw new Error('飞书未返回新建竞品表的 ID。');
+  tables[competitor] = tableId;
+  const nextConfig = { ...config, tables };
+  await writeJson(config.configPath, { ...nextConfig, configPath: undefined });
+  return { tableId, config: nextConfig };
+}
+
 export async function syncCaptureToFeishu({ researchDir, library, capture }) {
   const config = await readFeishuSyncConfig(researchDir);
+  const resolved = await resolveCompetitorTable(config, capture);
+  const tableId = resolved.tableId;
   let fileToken = capture.feishu_sync?.attachment_file_token;
   if (!fileToken) {
     const imagePath = path.join(library.directory, capture.screenshot);
@@ -99,8 +126,8 @@ export async function syncCaptureToFeishu({ researchDir, library, capture }) {
   };
   const existingRecordId = capture.feishu_sync?.record_id;
   const endpoint = existingRecordId
-    ? `/open-apis/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records/${existingRecordId}`
-    : `/open-apis/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records`;
+    ? `/open-apis/bitable/v1/apps/${config.appToken}/tables/${tableId}/records/${existingRecordId}`
+    : `/open-apis/bitable/v1/apps/${config.appToken}/tables/${tableId}/records`;
   const result = await feishuFetch(
     endpoint,
     { method: existingRecordId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) },
@@ -109,7 +136,7 @@ export async function syncCaptureToFeishu({ researchDir, library, capture }) {
   capture.feishu_sync = {
     status: 'synced',
     app_token: config.appToken,
-    table_id: config.tableId,
+    table_id: tableId,
     record_id: record?.record_id || existingRecordId,
     attachment_file_token: fileToken,
     synced_at: new Date().toISOString(),
