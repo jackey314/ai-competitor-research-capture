@@ -420,17 +420,25 @@ private struct CaptureTile: View {
     let onOpen: () -> Void
     let onDelete: () -> Void
     @State private var hovering = false
+    @State private var analysisExpanded = false
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Button(action: onOpen) { VStack(alignment: .leading, spacing: 5) {
-                AsyncImage(url: URL(string: "http://127.0.0.1:48923\(capture.imageUrl)")) { phase in
-                    if let image = phase.image { image.resizable().scaledToFill() }
-                    else { RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(0.14)).overlay(ProgressView().controlSize(.small)) }
+            VStack(alignment: .leading, spacing: 5) {
+                Button(action: onOpen) { VStack(alignment: .leading, spacing: 5) {
+                    AsyncImage(url: URL(string: "http://127.0.0.1:48923\(capture.imageUrl)")) { phase in
+                        if let image = phase.image { image.resizable().scaledToFill() }
+                        else { RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(0.14)).overlay(ProgressView().controlSize(.small)) }
+                    }
+                    .frame(height: 72).clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    HStack(spacing: 4) { Text(capture.id).font(.system(size: 9, weight: .bold)); Text(capture.name).lineLimit(1) }.font(.system(size: 9)).foregroundStyle(.white.opacity(0.84))
+                    Text(capture.syncStatus).font(.system(size: 8)).foregroundStyle(capture.syncStatus == "已同步" ? Color(red: 0.68, green: 0.92, blue: 0.76) : .white.opacity(0.55))
+                } }.buttonStyle(.plain).accessibilityLabel("查看截图 \(capture.id) \(capture.name) 的记录")
+                if let analysis = capture.analysis, !analysis.isEmpty {
+                    Button(action: { withAnimation(.easeOut(duration: 0.18)) { analysisExpanded.toggle() } }) { HStack(spacing: 3) { Image(systemName: analysisExpanded ? "chevron.up" : "chevron.down").font(.system(size: 7, weight: .bold)); Text("AI 分析结果") }.font(.system(size: 8, weight: .semibold)).foregroundStyle(.white.opacity(0.82)) }
+                        .buttonStyle(.plain).accessibilityLabel(analysisExpanded ? "收起 AI 分析结果" : "展开 AI 分析结果")
+                    if analysisExpanded { Text(analysis).font(.system(size: 8)).lineLimit(5).foregroundStyle(.white.opacity(0.72)).fixedSize(horizontal: false, vertical: true) }
                 }
-                .frame(height: 72).clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                HStack(spacing: 4) { Text(capture.id).font(.system(size: 9, weight: .bold)); Text(capture.name).lineLimit(1) }.font(.system(size: 9)).foregroundStyle(.white.opacity(0.84))
-                Text(capture.syncStatus).font(.system(size: 8)).foregroundStyle(capture.syncStatus == "已同步" ? Color(red: 0.68, green: 0.92, blue: 0.76) : .white.opacity(0.55))
-            } }.buttonStyle(.plain).accessibilityLabel("查看截图 \(capture.id) \(capture.name) 的记录")
+            }
             Button(action: onDelete) { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(.white).frame(width: 19, height: 19).background(.black.opacity(0.56), in: Circle()) }
                 .buttonStyle(.plain).opacity(hovering ? 1 : 0.78)
         }
