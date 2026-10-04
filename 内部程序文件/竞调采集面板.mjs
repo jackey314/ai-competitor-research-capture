@@ -84,16 +84,20 @@ function timestampLabel() {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
-async function getVisionAPIKey() {
+async function getKeychainValue(service, fallback = '') {
   return new Promise((resolve, reject) => execFile(
     'security',
-    ['find-generic-password', '-a', 'ai-competitor-research-capture', '-s', 'AICompetitorResearchOpenAIKey', '-w'],
-    (error, stdout) => error ? reject(new Error('未配置视觉分析密钥。')) : resolve(String(stdout).trim()),
+    ['find-generic-password', '-a', 'ai-competitor-research-capture', '-s', service, '-w'],
+    (error, stdout) => error ? (fallback ? resolve(fallback) : reject(new Error('未配置视觉分析密钥。'))) : resolve(String(stdout).trim()),
   ));
 }
 
 async function analyzeScreenshotWithVision(library, capture) {
-  const key = await getVisionAPIKey();
+  const [key, baseURL, model] = await Promise.all([
+    getKeychainValue('AICompetitorResearchOpenAIKey'),
+    getKeychainValue('AICompetitorResearchVisionBaseURL', 'https://api.openai.com/v1'),
+    getKeychainValue('AICompetitorResearchVisionModel', 'gpt-4.1-mini'),
+  ]);
   const image = await fs.readFile(path.join(library.directory, capture.screenshot));
   const instruction = [
     '你是一名资深产品与 UX 研究员。仅根据截图中可直接看见的信息，用中文输出 JSON。',
@@ -101,11 +105,11 @@ async function analyzeScreenshotWithVision(library, capture) {
     `当前页面名称：${capture.name}；模块：${capture.module || '未填写'}；研究任务：${capture.userTask || '未填写'}。`,
     'observation 只写可见事实；analysis 是基于事实的初步产品判断；uxState 只能使用：常规、加载中、成功、失败、缺省、无权限、禁用。',
   ].join('\n');
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  const response = await fetch(`${baseURL.replace(/\/$/, '')}/responses`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-4.1-mini', store: false,
+      model, store: false,
       input: [{ role: 'user', content: [
         { type: 'input_text', text: instruction },
         { type: 'input_image', image_url: `data:image/png;base64,${image.toString('base64')}`, detail: 'high' },
@@ -122,7 +126,8 @@ async function analyzeScreenshotWithVision(library, capture) {
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result?.error?.message || '视觉分析请求失败。');
-  try { return JSON.parse(result.output_text); }
+  const outputText = result.output_text || result.output?.flatMap((item) => item.content || []).find((item) => item.type === 'output_text')?.text;
+  try { return JSON.parse(outputText); }
   catch { throw new Error('视觉分析返回格式异常，请重试。'); }
 }
 
